@@ -1,65 +1,75 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { createClient } from "@/utils/supabase/client";
+import EnterScreen from "@/components/ui/EnterScreen";
+import Hero from "@/components/sections/Hero";
+import Features from "@/components/sections/Features";
+import UseCases from "@/components/sections/UseCases";
+import Pricing from "@/components/sections/Pricing";
+import Footer from "@/components/sections/Footer";
+import ProblemStatement from "@/components/sections/ProblemStatement";
+import Scene from "@/components/canvas/Scene";
+import { useUI } from "@/context/UIContext";
 
 export default function Home() {
+  const { hasEntered, setHasEntered } = useUI();
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // We can still do some pre-checks or loading simulation here if desired
+    // But referencing UIContext is immediate. we might want to ensure mounted.
+    setIsLoading(false);
+  }, []);
+
+  const handleEnter = () => {
+    setHasEntered(true);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="relative min-h-screen w-full bg-warm-grey overflow-hidden">
+      <AnimatePresence>
+        {!hasEntered && !isLoading && (
+          <EnterScreen onEnter={handleEnter} />
+        )}
+      </AnimatePresence>
+
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover opacity-20 contrast-125 saturate-0"
+        >
+          <source src="/bg.webm" type="video/webm" />
+        </video>
+
+        {/* Scene Container - Fades in */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: hasEntered ? 1 : 0 }}
+          transition={{ duration: 2, ease: "easeInOut" }}
+          className="absolute inset-0 w-full h-full"
+        >
+          <Scene />
+        </motion.div>
+      </div>
+
+      <motion.div
+        className="relative z-10"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: hasEntered ? 1 : 0 }}
+        transition={{ duration: 1, delay: 0.5 }}
+      >
+        <Hero startAnimation={hasEntered} />
+        <ProblemStatement />
+        <Features />
+        <UseCases />
+        <Pricing />
+        <Footer />
+      </motion.div>
+    </main>
   );
 }
