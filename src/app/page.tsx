@@ -41,7 +41,7 @@ export default function Home() {
           loop
           muted
           playsInline
-          className="absolute inset-0 w-full h-full object-cover opacity-20 contrast-125 saturate-0"
+          className="absolute inset-0 w-full h-full object-cover opacity-50"
         >
           <source src="/bg.webm" type="video/webm" />
         </video>
