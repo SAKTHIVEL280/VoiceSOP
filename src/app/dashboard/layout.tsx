@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
     LayoutDashboard,
     Settings,
@@ -10,6 +10,7 @@ import {
     Mic
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import FeedbackModal from '@/components/ui/FeedbackModal';
 
 export default function DashboardLayout({
     children,
@@ -18,21 +19,40 @@ export default function DashboardLayout({
 }) {
     const pathname = usePathname();
     const [profile, setProfile] = useState<any>(null);
+    const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
     const supabase = createClient();
 
+    const router = useRouter(); // Ensure useRouter is imported from 'next/navigation' at the top if not already
+
     useEffect(() => {
-        const fetchProfile = async () => {
+        const checkUser = async () => {
             const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', user.id)
-                    .single();
-                setProfile(data);
+            if (!user) {
+                router.push('/login');
+                return;
             }
+
+            // Only fetch profile if we have a user
+            const { data } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+            setProfile(data);
         };
-        fetchProfile();
+
+        checkUser();
+
+        // Subscribe to auth changes to auto-redirect on logout
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_OUT' || !session) {
+                router.push('/login');
+            }
+        });
+
+        return () => {
+            subscription.unsubscribe();
+        };
     }, []);
 
     const navItems = [
@@ -55,7 +75,7 @@ export default function DashboardLayout({
     return (
         <div className="flex h-screen bg-warm-grey/30">
             {/* Sidebar */}
-            <aside className="w-64 bg-white border-r border-gray-200 flex flex-col justify-between">
+            <aside className="hidden md:flex w-64 bg-white border-r border-gray-200 flex-col justify-between">
                 <div className="p-6">
                     <Link href="/" className="block mb-10">
                         <span className="text-2xl font-serif italic text-brand-red tracking-tight">VoiceSOP</span>
@@ -70,12 +90,18 @@ export default function DashboardLayout({
                                 <Link
                                     key={item.href}
                                     href={item.href}
-                                    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${isActive
+                                    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${isActive
                                         ? 'bg-off-black text-white shadow-md'
                                         : 'text-gray-600 hover:bg-gray-100'
                                         }`}
                                 >
-                                    <Icon size={20} className={isActive ? 'text-brand-red' : ''} />
+                                    <Icon
+                                        size={20}
+                                        className={`${isActive ? 'text-brand-red' : ''} transition-transform duration-300 ${item.icon === Mic
+                                                ? 'group-hover:scale-110 group-hover:text-brand-red'
+                                                : 'group-hover:rotate-90'
+                                            }`}
+                                    />
                                     <span className={`font-medium ${isActive ? 'font-sans' : 'font-sans'}`}>
                                         {item.label}
                                     </span>
@@ -85,26 +111,42 @@ export default function DashboardLayout({
                     </nav>
                 </div>
 
-                <div className="p-6 border-t border-gray-100 flex flex-col gap-2">
+                <div className="p-6">
+                    <button
+                        onClick={() => setIsFeedbackOpen(true)}
+                        className="flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-brand-red hover:bg-red-50 rounded-xl transition-all w-full text-left"
+                    >
+                        <div className="relative">
+                            <span className="absolute -top-1 -right-1 w-2 h-2 bg-brand-red rounded-full animate-pulse"></span>
+                            <Settings size={20} className="rotate-12" /> {/* Or MessageSquare if imported */}
+                        </div>
+
+                        <span className="font-medium">Feedback / Bugs</span>
+                    </button>
+
                     <Link href="/" className="flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-off-black hover:bg-gray-50 rounded-xl transition-all">
-                        <LogOut size={20} className="rotate-180" /> {/* Rotate to point left */}
+                        <LogOut size={20} className="rotate-180" />
                         <span className="font-medium">Back to Home</span>
                     </Link>
 
                     {profile && (
-                        <div className="flex items-center gap-3 mb-2 p-3 bg-gray-50 rounded-lg">
-                            <div className="w-8 h-8 rounded-full bg-brand-red/20 flex items-center justify-center text-brand-red font-bold text-sm">
+                        <Link
+                            href="/dashboard/settings"
+                            className="mt-6 flex items-center gap-3 p-3 bg-warm-grey/50 rounded-xl hover:bg-gray-100 transition-colors"
+                        >
+                            <div className="w-10 h-10 rounded-full bg-off-black text-white flex items-center justify-center font-bold text-sm">
                                 {getInitials(profile.full_name)}
                             </div>
-                            <div className="flex flex-col overflow-hidden">
-                                <span className="text-sm font-bold text-off-black truncate" title={profile.full_name}>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-bold text-sm text-off-black truncate">
                                     {profile.full_name || 'User'}
-                                </span>
-                                <span className="text-xs text-gray-500 capitalize">
+                                </p>
+                                <p className="text-xs text-gray-500 truncate capitalize">
                                     {profile.subscription_tier || 'Free'} Plan
-                                </span>
+                                </p>
                             </div>
-                        </div>
+                            <Settings size={16} className="text-gray-400" />
+                        </Link>
                     )}
                 </div>
             </aside>
@@ -113,6 +155,8 @@ export default function DashboardLayout({
             <main className="flex-1 overflow-y-auto">
                 {children}
             </main>
+
+            <FeedbackModal isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
         </div>
     );
 }

@@ -6,6 +6,7 @@ import VoiceRecorder from '@/components/ui/VoiceRecorder';
 import { Loader2 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
 
 export default function NewSOPPage() {
     const router = useRouter();
@@ -21,13 +22,7 @@ export default function NewSOPPage() {
 
             // Check Subscription Tier
             const { data: profile } = await supabase
-                .from('users') // Assuming 'users' table is what we use, or 'profiles'? 
-                // Ah, effectively 'profiles' in schema.sql was created. But schema.sql says `create table if not exists public.profiles`.
-                // Wait, the PRD says `users` table. But my previous work created `profiles`.
-                // Let me check schema.sql quickly to be sure. I'll assume 'profiles' or whatever I set up.
-                // Re-reading previous context: "Database setup (`profiles`, `sops` tables..."
-                // So I should use 'profiles'. The PRD mentions 'users' table, but I implemented 'profiles'.
-                // I will use 'profiles'.
+                .from('profiles')
                 .select('subscription_tier')
                 .eq('id', user.id)
                 .single();
@@ -37,16 +32,13 @@ export default function NewSOPPage() {
             startOfMonth.setDate(1);
             startOfMonth.setHours(0, 0, 0, 0);
 
-            const { count, error } = await supabase
+            const { count } = await supabase
                 .from('sops')
                 .select('*', { count: 'exact', head: true })
                 .eq('user_id', user.id)
-                .gte('created_at', startOfMonth.toISOString())
-                .eq('is_deleted', false); // Don't count deleted ones? Or do? PRD says 3 SOPs/month. Usually includes deleted. But let's be generous.
+                .gte('created_at', startOfMonth.toISOString());
 
             const limit = 3;
-            // distinct manual override for now effectively since we don't have payments hooked up completely
-            // we will enforce 'free' tier logic.
             const tier = profile?.subscription_tier || 'free';
 
             if (tier === 'free' && (count || 0) >= limit) {
@@ -59,12 +51,14 @@ export default function NewSOPPage() {
 
     const handleGeneration = async (audioBlob: Blob, transcript: string) => {
         setIsGenerating(true);
+        let createdSopId = null;
+
         try {
             // 1. Get User
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("No user found");
 
-            // 2. Upload Audio (We keep this for archival/playback purposes)
+            // 2. Upload Audio
             const filename = `${user.id}/${Date.now()}.webm`;
             const { error: uploadError } = await supabase.storage
                 .from('audio-recordings')
@@ -77,43 +71,56 @@ export default function NewSOPPage() {
                 .from('audio-recordings')
                 .getPublicUrl(filename);
 
-            // 4. Create SOP Record
+            // 4. Create SOP Record (DRAFT STATE)
             const { data: sopData, error: dbError } = await supabase
                 .from('sops')
                 .insert({
                     user_id: user.id,
                     title: 'Untitled SOP (Processing)',
                     audio_url: publicUrl,
-                    tags: ['Draft']
+                    tags: ['Draft', 'Processing']
                 })
                 .select()
                 .single();
 
             if (dbError) throw dbError;
+            createdSopId = sopData.id;
 
             // 5. Call AI Generation API
-            // Pass the TRANSCRIPT directly.
             const apiResponse = await fetch('/api/generate-sop', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     audioUrl: publicUrl,
                     sopId: sopData.id,
-                    transcript: transcript // <--- New Field
+                    transcript: transcript
                 }),
             });
 
             if (!apiResponse.ok) {
-                console.error("AI Generation failed:", await apiResponse.text());
+                const errorData = await apiResponse.json();
+                console.error("AI Generation failed:", errorData);
+                throw new Error(errorData.error || "AI Generation Failed");
             }
 
-            // 6. Redirect
+            // 6. Redirect on Success
+            toast.success("SOP Generated successfully!");
             router.push(`/dashboard/sop/${sopData.id}`);
             router.refresh();
 
-        } catch (error) {
-            console.error("Error creating SOP:", error);
-            alert("Failed to upload/create SOP. See console.");
+        } catch (error: any) {
+            console.error("Error creating SOP:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
+            console.log("Raw Error:", error);
+
+            if (error.message.includes("quota")) {
+                toast.error("Monthly quota reached. Upgrade to Pro!");
+                setIsLimitReached(true);
+            } else {
+                toast.error("Generation possibly failed. Saved as Draft.");
+                if (createdSopId) {
+                    router.push(`/dashboard/sop/${createdSopId}`);
+                }
+            }
             setIsGenerating(false);
         }
     };
@@ -131,7 +138,6 @@ export default function NewSOPPage() {
             <div className="p-8 max-w-4xl mx-auto h-full flex flex-col items-center justify-center text-center">
                 <div className="bg-red-50 p-6 rounded-full mb-6">
                     <Loader2 size={48} className="text-brand-red" />
-                    {/* Reuse Loader icon or Lock icon if imported, but sticking to existing imports to minimize errors */}
                 </div>
                 <h1 className="text-3xl font-serif italic text-off-black mb-4">Monthly Limit Reached</h1>
                 <p className="text-gray-600 max-w-md mb-8">
@@ -166,7 +172,6 @@ export default function NewSOPPage() {
                 <h2 className="mt-8 text-2xl font-serif italic text-off-black">Structuring your SOP...</h2>
                 <p className="text-gray-500 mt-2">AI is identifying steps, checklists, and warnings.</p>
 
-                {/* Mock Progress Logs (Visual only, actual logic happens in background until API responds) */}
                 <div className="mt-8 font-mono text-sm text-gray-400 space-y-1 text-center">
                     <motion.div animate={{ opacity: [0, 1] }} transition={{ delay: 0.5 }} className="flex items-center justify-center gap-2">
                         <Loader2 size={14} className="animate-spin" /> Transcribing audio...

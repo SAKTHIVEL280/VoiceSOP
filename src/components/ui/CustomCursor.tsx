@@ -95,7 +95,7 @@ export default function CustomCursor() {
     }, { scope: cursorRef });
 
     return (
-        <>
+        <div className="hidden md:block">
             {/* Inner Dot */}
             <div
                 ref={cursorRef}
@@ -108,10 +108,12 @@ export default function CustomCursor() {
             />
 
             <style jsx global>{`
-                body, a, button, input, textarea {
-                    cursor: none !important;
+                @media (min-width: 768px) {
+                    body, a, button, input, textarea {
+                        cursor: none !important;
+                    }
                 }
             `}</style>
-        </>
+        </div>
     );
 }

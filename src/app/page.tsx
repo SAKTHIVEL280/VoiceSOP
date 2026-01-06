@@ -10,8 +10,10 @@ import UseCases from "@/components/sections/UseCases";
 import Pricing from "@/components/sections/Pricing";
 import Footer from "@/components/sections/Footer";
 import ProblemStatement from "@/components/sections/ProblemStatement";
-import Scene from "@/components/canvas/Scene";
 import { useUI } from "@/context/UIContext";
+import dynamic from "next/dynamic";
+
+const Scene = dynamic(() => import("@/components/canvas/Scene"), { ssr: false });
 
 export default function Home() {
   const { hasEntered, setHasEntered } = useUI();

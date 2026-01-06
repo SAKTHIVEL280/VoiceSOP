@@ -6,6 +6,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { User } from '@supabase/supabase-js';
+import HeroButton from "@/components/ui/HeroButton";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -69,20 +70,16 @@ export default function Hero({ startAnimation = true }: { startAnimation?: boole
                 </p>
 
                 <div className="hero-reveal flex items-center gap-4">
-                    <button
-                        onClick={() => router.push(user ? '/dashboard/new' : '/login')}
-                        className="group relative overflow-hidden bg-[#FF4D4D] text-white border-2 border-[#FF4D4D] px-8 py-4 rounded-full font-medium uppercase tracking-wider hover:bg-transparent hover:text-[#FF4D4D] transition-colors duration-300 min-w-[260px]"
-                    >
-                        <span className="block transition-transform duration-500 ease-[cubic-bezier(0.87,0,0.13,1)] group-hover:-translate-y-[150%]">
-                            {user ? 'Create New SOP' : 'Start Creating Free'}
-                        </span>
-                        <span className="absolute left-0 top-0 w-full h-full flex items-center justify-center transition-transform duration-500 ease-[cubic-bezier(0.87,0,0.13,1)] translate-y-[150%] group-hover:translate-y-0 font-serif italic text-xl capitalize tracking-normal">
-                            {user ? 'Create New SOP' : 'Start Creating Free'}
-                        </span>
-                    </button>
-                    <button className="bg-white border text-black px-8 py-4 rounded-full font-bold hover:bg-gray-50 transition-colors shadow-sm hover:shadow-md">
-                        Watch Demo
-                    </button>
+                    <div className="hero-reveal flex items-center gap-4">
+                        <HeroButton
+                            onClick={() => router.push(user ? '/dashboard/new' : '/login')}
+                            text={user ? 'Create New SOP' : 'Start Creating Free'}
+                            className="min-w-[260px]"
+                        />
+                        <button className="bg-white border text-black px-8 py-4 rounded-full font-bold hover:bg-gray-50 transition-colors shadow-sm hover:shadow-md">
+                            Watch Demo
+                        </button>
+                    </div>
                 </div>
             </div>
         </section>

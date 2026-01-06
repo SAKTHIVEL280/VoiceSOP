@@ -18,7 +18,7 @@ const plans = [
         price: "₹499",
         period: "/month",
         description: "For serious business owners.",
-        features: ["Unlimited SOPs", "Advanced Formatting", "Markdown Export", "Priority Support"],
+        features: ["Unlimited SOPs", "Advanced Formatting (ISO Standard)", "Scope, Roles & Glossary Sections", "Priority Support"],
         cta: "Get Pro",
         highlight: true
     },

@@ -5,6 +5,7 @@ import SmoothScroll from "@/components/ui/SmoothScroll";
 import Header from "@/components/ui/Header";
 import CustomCursor from "@/components/ui/CustomCursor";
 import { UIProvider } from "@/context/UIContext";
+import { Toaster } from "@/components/ui/Toaster";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -19,7 +20,30 @@ const fraunces = Fraunces({
 
 export const metadata: Metadata = {
   title: "VoiceSOP - AI SOP Generator",
-  description: "Turn messy voice notes into professional SOPs in 60 seconds.",
+  description: "Turn messy voice notes into professional SOPs in 60 seconds, using advanced AI.",
+  openGraph: {
+    title: "VoiceSOP - AI SOP Generator",
+    description: "Turn messy voice notes into professional SOPs in 60 seconds.",
+    url: "https://voicesop.com",
+    siteName: "VoiceSOP",
+    images: [
+      {
+        url: "/og-image.png", // We don't have this image yet but it's good practice to link it
+        width: 1200,
+        height: 630,
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "VoiceSOP - AI SOP Generator",
+    description: "Turn messy voice notes into professional SOPs in 60 seconds.",
+  },
+  icons: {
+    icon: "/favicon.ico", // User mentioned they have this
+  }
 };
 
 export default function RootLayout({
@@ -37,6 +61,7 @@ export default function RootLayout({
           <SmoothScroll>
             <Header />
             {children}
+            <Toaster />
           </SmoothScroll>
         </UIProvider>
       </body>

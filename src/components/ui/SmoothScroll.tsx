@@ -16,7 +16,8 @@ export default function SmoothScroll({ children }: { children: ReactNode }) {
             orientation: 'vertical',
             gestureOrientation: 'vertical',
             smoothWheel: true,
-            syncTouch: true,
+            syncTouch: false, // Changed to false: Let native touch scrolling handle mobile (smoother/bug-free)
+            touchMultiplier: 2,
         });
 
         lenis.on('scroll', ScrollTrigger.update);

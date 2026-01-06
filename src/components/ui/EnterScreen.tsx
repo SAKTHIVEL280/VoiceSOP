@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { useState } from 'react';
-import InteractiveEyes from './InteractiveEyes';
+import VoiceToDoc from './VoiceToDoc';
 
 interface EnterScreenProps {
     onEnter: () => void;
@@ -14,22 +14,27 @@ export default function EnterScreen({ onEnter }: EnterScreenProps) {
 
     const handleClick = () => {
         setClicked(true);
-        // Small delay to allow button animation before triggering parent
-        setTimeout(onEnter, 300);
+        // Delay triggering parent onEnter to allow internal exit animations to play
+        setTimeout(onEnter, 1000);
     };
 
     return (
         <motion.div
             initial={{ opacity: 1 }}
-            exit={{ opacity: 0, transition: { duration: 0.8, ease: "easeInOut" } }}
+            exit={{ opacity: 0, transition: { duration: 1.5, ease: "easeInOut" } }}
             className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black text-white"
-            onClick={handleClick}
         >
             <motion.div
                 initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 1, ease: "easeOut" }}
-                className="flex flex-col items-center gap-6"
+                animate={{
+                    scale: clicked ? 1.1 : 1,
+                    opacity: clicked ? 0 : 1
+                }}
+                transition={{
+                    duration: clicked ? 0.8 : 1,
+                    ease: clicked ? "easeInOut" : "easeOut"
+                }}
+                className="flex flex-col items-center justify-center gap-6"
             >
                 {/* Logo or Brand */}
                 <h1 className="text-4xl md:text-6xl font-serif tracking-tighter">
@@ -40,23 +45,22 @@ export default function EnterScreen({ onEnter }: EnterScreenProps) {
                     The Voice-First Standard Operating Procedure
                 </p>
 
-                {/* Interactive Eyes */}
+                {/* Voice to Doc Visualization */}
                 <motion.div
                     initial={{ scale: 0, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ delay: 0.5, duration: 0.8, type: "spring" }}
+                    className="flex justify-center"
                 >
-                    <InteractiveEyes isHovering={isHovering} />
+                    <VoiceToDoc isHovering={isHovering} />
                 </motion.div>
 
-                {/* Enter Button / Interaction Hint */}
-                {/* Matches Hero CTA Style */}
                 {/* Enter Button / Interaction Hint */}
                 {/* Matches Hero CTA Style */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 3.5, duration: 1, ease: "easeOut" }}
+                    transition={{ delay: 1.5, duration: 1, ease: "easeOut" }}
                 >
                     <button
                         onClick={handleClick}

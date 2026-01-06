@@ -171,9 +171,14 @@ export default function Scene() {
     return (
         <Canvas
             className="w-full h-full"
-            dpr={[1, 2]}
+            dpr={[1, 1.5]}
             camera={{ position: [0, 0, 10], fov: 45 }}
-            gl={{ antialias: true, alpha: true }}
+            gl={{
+                antialias: false,
+                alpha: true,
+                powerPreference: "default",
+                failIfMajorPerformanceCaveat: true
+            }}
         >
             <Suspense fallback={null}>
                 <ambientLight intensity={0.5} />

@@ -12,10 +12,19 @@
 }
 
 @layer base {
+  /* Ensure body can scroll */
+  html, body {
+    height: auto;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-warm-grey text-off-black font-sans;
     position: relative;
-    overflow-x: hidden;
+    /* overflow-x: hidden; Removed from here to avoid conflicts */
   }
 
   /* Custom Selection Color */

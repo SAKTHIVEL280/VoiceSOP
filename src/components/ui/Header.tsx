@@ -35,6 +35,7 @@ export default function Header() {
 
     const handleSignOut = async () => {
         await supabase.auth.signOut();
+        router.push('/');
         router.refresh();
         setIsMenuOpen(false);
     };
@@ -43,6 +44,7 @@ export default function Header() {
         ? [
             { label: "Index", href: "/" },
             { label: "Dashboard", href: "/dashboard" },
+            { label: "Settings", href: "/dashboard/settings" },
             { label: "Pricing", href: "/pricing" }
         ]
         : [
@@ -55,30 +57,32 @@ export default function Header() {
     if (!hasEntered) return null;
 
     return (
-        <header className="fixed top-0 right-0 z-[60] p-8 flex items-center gap-8 mix-blend-difference text-white">
+        <header className="fixed top-0 right-0 z-[60] p-8 flex items-center gap-8 text-off-black">
 
-            {/* Minimal Top Right Links (Visible initially) */}
-            <motion.nav
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.5, duration: 1 }}
-                className="hidden md:flex items-center gap-6 text-sm tracking-wider uppercase font-medium border border-white/20 rounded-full px-8 py-3 bg-black/5 backdrop-blur-md shadow-sm"
-            >
-                {navLinks.map((link) => (
-                    <Link
-                        key={link.href}
-                        href={link.href}
-                        className={`group relative overflow-hidden inline-block h-[32px] transition-colors ${pathname === link.href ? 'text-brand-red opacity-100' : 'text-white/70 hover:text-white hover:opacity-100'} border border-transparent hover:border-white/20 rounded-full px-4 py-1.5`}
-                    >
-                        <span className="block transition-transform duration-500 ease-[cubic-bezier(0.87,0,0.13,1)] group-hover:-translate-y-[150%]">
-                            {link.label}
-                        </span>
-                        <span className="absolute left-0 top-0 w-full h-full flex items-center justify-center transition-transform duration-500 ease-[cubic-bezier(0.87,0,0.13,1)] translate-y-[150%] group-hover:translate-y-0 font-serif italic capitalize tracking-normal">
-                            {link.label.toLowerCase()}
-                        </span>
-                    </Link>
-                ))}
-            </motion.nav>
+            {/* Minimal Top Right Links (Visible initially) - ONLY ON HOME PAGE */}
+            {pathname === '/' && (
+                <motion.nav
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.5, duration: 1 }}
+                    className="hidden md:flex items-center gap-6 text-sm tracking-wider uppercase font-medium border border-black/10 rounded-full px-8 py-3 bg-white/40 backdrop-blur-md shadow-sm"
+                >
+                    {navLinks.map((link) => (
+                        <Link
+                            key={link.href}
+                            href={link.href}
+                            className={`group relative overflow-hidden inline-block h-[32px] transition-colors ${pathname === link.href ? 'text-brand-red opacity-100 font-bold' : 'text-off-black/60 hover:text-off-black hover:opacity-100'} border border-transparent hover:border-black/10 rounded-full px-4 py-1.5`}
+                        >
+                            <span className="block transition-transform duration-500 ease-[cubic-bezier(0.87,0,0.13,1)] group-hover:-translate-y-[150%]">
+                                {link.label}
+                            </span>
+                            <span className="absolute left-0 top-0 w-full h-full flex items-center justify-center transition-transform duration-500 ease-[cubic-bezier(0.87,0,0.13,1)] translate-y-[150%] group-hover:translate-y-0 font-serif italic capitalize tracking-normal">
+                                {link.label.toLowerCase()}
+                            </span>
+                        </Link>
+                    ))}
+                </motion.nav>
+            )}
 
             {/* Menu Toggle Button (The "Dots" or User Icon) */}
             <motion.button
@@ -86,11 +90,11 @@ export default function Header() {
                 animate={{ scale: 1 }}
                 transition={{ delay: 0.6, type: "spring" }}
                 onClick={() => setIsMenuOpen(true)}
-                className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:scale-110 transition-transform cursor-pointer"
+                className="w-10 h-10 rounded-full bg-off-black text-white flex items-center justify-center hover:rotate-90 transition-transform cursor-pointer shadow-md"
             >
                 <div className="flex gap-1">
-                    <div className="w-1.5 h-1.5 rounded-full bg-black"></div>
-                    <div className="w-1.5 h-1.5 rounded-full bg-black"></div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
                 </div>
             </motion.button>
 
@@ -104,7 +108,7 @@ export default function Header() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setIsMenuOpen(false)}
-                            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[70]"
+                            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[70]"
                         />
 
                         {/* Side Panel */}
@@ -138,9 +142,13 @@ export default function Header() {
                                         <Link
                                             href={link.href}
                                             onClick={() => setIsMenuOpen(false)}
-                                            className="block text-5xl md:text-6xl font-serif italic hover:text-brand-red transition-colors hover:translate-x-4 duration-300"
+                                            className={`block text-5xl md:text-6xl font-serif italic transition-all duration-300 hover:text-brand-red hover:translate-x-4 ${pathname === link.href ? 'text-brand-red translate-x-4' : ''
+                                                }`}
                                         >
-                                            <span className="text-lg not-italic font-sans text-white/30 mr-6 align-top">0{index + 1}</span>
+                                            <span className={`text-lg not-italic font-sans mr-6 align-top transition-colors ${pathname === link.href ? 'text-brand-red/60' : 'text-white/30'
+                                                }`}>
+                                                0{index + 1}
+                                            </span>
                                             {link.label}
                                         </Link>
                                     </motion.div>

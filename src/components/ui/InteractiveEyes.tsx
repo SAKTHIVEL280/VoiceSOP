@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface InteractiveEyesProps {
     isHovering: boolean;
@@ -10,7 +10,7 @@ interface InteractiveEyesProps {
 // Heart Shape Path
 const heartPath = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
 
-const Eye = ({ eyeRef, lookPos, isHovering }: { eyeRef: React.RefObject<HTMLDivElement | null>, lookPos: { x: number, y: number }, isHovering: boolean }) => (
+const Eye = ({ eyeRef, pupilRef, isHovering }: { eyeRef: React.RefObject<HTMLDivElement | null>, pupilRef: React.RefObject<HTMLDivElement | null>, isHovering: boolean }) => (
     <div
         ref={eyeRef}
         className="relative w-20 h-28 bg-[#ffffff] rounded-[50%] flex items-center justify-center overflow-hidden shadow-[inset_0_4px_10px_rgba(0,0,0,0.2)]"
@@ -18,22 +18,11 @@ const Eye = ({ eyeRef, lookPos, isHovering }: { eyeRef: React.RefObject<HTMLDivE
             boxShadow: "inset 0 0 15px rgba(0,0,0,0.1), 0 5px 10px rgba(0,0,0,0.2)"
         }}
     >
-        {/* Moving Group */}
+        {/* Moving Pupil Group */}
         <motion.div
-            className="relative flex items-center justify-center w-full h-full"
-            animate={isHovering ? "heart" : "normal"}
-            variants={{
-                normal: {
-                    x: lookPos.x,
-                    y: lookPos.y,
-                    scale: 1,
-                },
-                heart: {
-                    x: 0,
-                    y: 0,
-                    scale: 1.1,
-                }
-            }}
+            ref={pupilRef}
+            className="relative flex items-center justify-center w-full h-full will-change-transform"
+            animate={isHovering ? { scale: 1.1 } : { scale: 1 }}
             transition={{ type: "spring", stiffness: 150, damping: 15 }}
         >
             {/* Pupil / Heart Container Wrapper */}
@@ -73,42 +62,76 @@ const Eye = ({ eyeRef, lookPos, isHovering }: { eyeRef: React.RefObject<HTMLDivE
 export default function InteractiveEyes({ isHovering }: InteractiveEyesProps) {
     const leftEyeRef = useRef<HTMLDivElement>(null);
     const rightEyeRef = useRef<HTMLDivElement>(null);
-    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+    const leftPupilRef = useRef<HTMLDivElement>(null);
+    const rightPupilRef = useRef<HTMLDivElement>(null);
+
+    // Track hover state in ref for the animation loop
+    const isHoveringRef = useRef(isHovering);
+    useEffect(() => {
+        isHoveringRef.current = isHovering;
+    }, [isHovering]);
 
     useEffect(() => {
+        let animationFrameId: number;
+        let mouseX = 0;
+        let mouseY = 0;
+
         const handleMouseMove = (e: MouseEvent) => {
-            setMousePos({ x: e.clientX, y: e.clientY });
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+
+            if (!animationFrameId) {
+                animationFrameId = requestAnimationFrame(updateEyes);
+            }
         };
+
+        const updateEyes = () => {
+            updateEye(leftEyeRef, leftPupilRef, mouseX, mouseY);
+            updateEye(rightEyeRef, rightPupilRef, mouseX, mouseY);
+            animationFrameId = 0;
+        };
+
+        const updateEye = (
+            eyeRef: React.RefObject<HTMLDivElement | null>,
+            pupilRef: React.RefObject<HTMLDivElement | null>,
+            mx: number,
+            my: number
+        ) => {
+            if (!eyeRef.current || !pupilRef.current) return;
+
+            // If hovering, lock to center (Heart Mode)
+            if (isHoveringRef.current) {
+                pupilRef.current.style.transform = `translate(0px, 0px)`;
+                return;
+            }
+
+            const rect = eyeRef.current.getBoundingClientRect();
+            const eyeCenterX = rect.left + rect.width / 2;
+            const eyeCenterY = rect.top + rect.height / 2;
+
+            const angle = Math.atan2(my - eyeCenterY, mx - eyeCenterX);
+            const distance = Math.min(
+                15,
+                Math.hypot(mx - eyeCenterX, my - eyeCenterY) / 8
+            );
+
+            const x = Math.cos(angle) * distance;
+            const y = Math.sin(angle) * distance;
+
+            pupilRef.current.style.transform = `translate(${x}px, ${y}px)`;
+        };
+
         window.addEventListener('mousemove', handleMouseMove);
-        return () => window.removeEventListener('mousemove', handleMouseMove);
-    }, []);
-
-    const calculateLookPos = (eyeRef: React.RefObject<HTMLDivElement | null>) => {
-        if (!eyeRef.current) return { x: 0, y: 0 };
-
-        const rect = eyeRef.current.getBoundingClientRect();
-        const eyeCenterX = rect.left + rect.width / 2;
-        const eyeCenterY = rect.top + rect.height / 2;
-
-        const angle = Math.atan2(mousePos.y - eyeCenterY, mousePos.x - eyeCenterX);
-        const distance = Math.min(
-            15,
-            Math.hypot(mousePos.x - eyeCenterX, mousePos.y - eyeCenterY) / 8
-        );
-
-        return {
-            x: Math.cos(angle) * distance,
-            y: Math.sin(angle) * distance,
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
         };
-    };
-
-    const leftLook = calculateLookPos(leftEyeRef);
-    const rightLook = calculateLookPos(rightEyeRef);
+    }, []);
 
     return (
         <div className="flex gap-6 mb-8">
-            <Eye eyeRef={leftEyeRef} lookPos={leftLook} isHovering={isHovering} />
-            <Eye eyeRef={rightEyeRef} lookPos={rightLook} isHovering={isHovering} />
+            <Eye eyeRef={leftEyeRef} pupilRef={leftPupilRef} isHovering={isHovering} />
+            <Eye eyeRef={rightEyeRef} pupilRef={rightPupilRef} isHovering={isHovering} />
         </div>
     );
 }
