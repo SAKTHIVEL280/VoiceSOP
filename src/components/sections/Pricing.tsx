@@ -2,6 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Check } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 const plans = [
     {
@@ -12,7 +13,8 @@ const plans = [
         description: "Perfect for testing the waters.",
         features: ["3 free SOP generations per month", "Store 1 SOP at a time", "PDF Export"],
         cta: "Start Free",
-        highlight: false
+        highlight: false,
+        href: "/login"
     },
     {
         name: "Pro",
@@ -22,7 +24,8 @@ const plans = [
         description: "For serious business owners.",
         features: ["Unlimited SOPs", "Advanced Formatting (ISO Standard)", "Scope, Roles & Glossary Sections", "Priority Support"],
         cta: "Get Pro",
-        highlight: true
+        highlight: true,
+        href: "/login"
     },
     {
         name: "Team",
@@ -32,11 +35,13 @@ const plans = [
         description: "For scaling agencies.",
         features: ["Everything in Pro", "5 Team Members", "Shared Library", "Custom Branding"],
         cta: "Contact Sales",
-        highlight: false
+        highlight: false,
+        href: "/contact"
     }
 ];
 
 export default function Pricing() {
+    const router = useRouter();
     const country = useMemo<'IN' | 'US'>(() => {
         if (typeof navigator === 'undefined') return 'US';
         const locale = (navigator.language || '').toLowerCase();
@@ -92,7 +97,7 @@ export default function Pricing() {
                             </ul>
 
                             <button
-                                onClick={() => alert("Payment integration coming soon! (Waiting for API Keys)")}
+                                onClick={() => router.push(plan.href)}
                                 className={`w-full py-4 rounded-xl font-bold transition-all ${plan.highlight
                                     ? 'bg-brand-red hover:bg-red-600 text-white shadow-lg hover:shadow-red-500/30'
                                     : 'bg-gray-100 hover:bg-gray-200 text-off-black'
