@@ -45,24 +45,26 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const formData = await req.formData();
-        const file = formData.get('file');
+        const body = await req.json();
+        const { audioUrl } = body;
 
-        if (!(file instanceof File)) {
-            return NextResponse.json({ error: 'Missing audio file.' }, { status: 400 });
+        if (!audioUrl) {
+            return NextResponse.json({ error: 'Missing audioUrl.' }, { status: 400 });
         }
 
-        if (!SUPPORTED_MIME_TYPES.has(file.type)) {
-            return NextResponse.json({ error: 'Unsupported audio format.' }, { status: 400 });
+        const audioRes = await fetch(audioUrl);
+        if (!audioRes.ok) {
+            return NextResponse.json({ error: 'Failed to fetch audio from storage.' }, { status: 400 });
         }
 
-        if (file.size > MAX_AUDIO_SIZE_BYTES) {
+        const buffer = Buffer.from(await audioRes.arrayBuffer());
+        
+        if (buffer.length > MAX_AUDIO_SIZE_BYTES) {
             return NextResponse.json({ error: 'Audio file is too large (max 25 MB).' }, { status: 400 });
         }
 
-        // Convert Next.js Web File to Node Buffer for Groq SDK
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const groqFile = await toFile(buffer, file.name, { type: file.type });
+        // Convert fetched buffer to Groq File
+        const groqFile = await toFile(buffer, 'audio.webm', { type: 'audio/webm' });
 
         const transcription = await groq.audio.transcriptions.create({
             model: 'whisper-large-v3-turbo',

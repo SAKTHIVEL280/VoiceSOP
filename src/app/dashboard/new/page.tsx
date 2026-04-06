@@ -106,14 +106,30 @@ export default function NewSOPPage() {
                 }
             }
 
-            // 1c. Auto-transcribe audio when transcript is missing/too short.
+            // 2. Upload Audio FIRST to bypass Vercel 4.5MB upload limits
+            const filename = `${user.id}/${Date.now()}.webm`;
+            const { error: uploadError } = await supabase.storage
+                .from('audio-recordings')
+                .upload(filename, audioBlob);
+
+            if (uploadError) throw uploadError;
+
+            // 3. Store the storage path (signed URLs are generated on-the-fly when viewing)
+            const storagePath = filename;
+
+            // 1c. Auto-transcribe audio when transcript is missing/too short using uploaded URL
             if (resolvedTranscript.length <= 10) {
-                const formData = new FormData();
-                formData.append('file', audioBlob, 'input-audio.webm');
+                // Get a temporary signed URL for the server to download the audio
+                const { data: signedUrlData } = await supabase.storage
+                    .from('audio-recordings')
+                    .createSignedUrl(storagePath, 3600);
+                    
+                if (!signedUrlData?.signedUrl) throw new Error('signed_url_failed');
 
                 const transcribeResponse = await fetch('/api/transcribe', {
                     method: 'POST',
-                    body: formData,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ audioUrl: signedUrlData.signedUrl }),
                 });
 
                 const transcribeData = await transcribeResponse.json();
@@ -126,17 +142,6 @@ export default function NewSOPPage() {
                     throw new Error('transcription_too_short');
                 }
             }
-
-            // 2. Upload Audio
-            const filename = `${user.id}/${Date.now()}.webm`;
-            const { error: uploadError } = await supabase.storage
-                .from('audio-recordings')
-                .upload(filename, audioBlob);
-
-            if (uploadError) throw uploadError;
-
-            // 3. Store the storage path (signed URLs are generated on-the-fly when viewing)
-            const storagePath = filename;
 
             // 4. Create SOP Record (DRAFT STATE)
             const { data: sopData, error: dbError } = await supabase
