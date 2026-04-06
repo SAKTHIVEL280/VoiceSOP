@@ -1,8 +1,11 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
+import { toast } from 'sonner';
+import Script from 'next/script';
 
 const plans = [
     {
@@ -14,7 +17,8 @@ const plans = [
         features: ["3 free SOP generations per month", "Store 1 SOP at a time", "PDF Export"],
         cta: "Start Free",
         highlight: false,
-        href: "/login"
+        href: "/login",
+        planId: "free"
     },
     {
         name: "Pro",
@@ -25,7 +29,8 @@ const plans = [
         features: ["Unlimited SOPs", "Advanced Formatting (ISO Standard)", "Scope, Roles & Glossary Sections", "Priority Support"],
         cta: "Get Pro",
         highlight: true,
-        href: "/login"
+        href: "#",
+        planId: "pro"
     },
     {
         name: "Team",
@@ -36,12 +41,89 @@ const plans = [
         features: ["Everything in Pro", "5 Team Members", "Shared Library", "Custom Branding"],
         cta: "Contact Sales",
         highlight: false,
-        href: "/contact"
+        href: "/contact",
+        planId: "team"
     }
 ];
 
 export default function Pricing() {
     const router = useRouter();
+    const supabase = useMemo(() => createClient(), []);
+    const [loadingPlan, setLoadingPlan] = React.useState<string | null>(null);
+
+    const handleCheckout = async (planId: string) => {
+        if (planId === 'free') {
+            router.push('/login');
+            return;
+        }
+
+        try {
+            setLoadingPlan(planId);
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                toast.error("Please sign in or create an account to upgrade.");
+                router.push("/login?next=/pricing");
+                return;
+            }
+
+            if (planId === 'team') {
+                // Keep team plan as redirect to contact for now, or open razorpay if you want Team to be self-serve:
+                // If we want self-serve Team, we remove this. For now let's make it self-serve since we built the API for it.
+            }
+
+            const res = await fetch('/api/razorpay/create-order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ planId })
+            });
+
+            const orderHeader = await res.json();
+            if (!res.ok) throw new Error(orderHeader.error || "Failed to create order");
+
+            const options = {
+                key: orderHeader.key_id,
+                amount: orderHeader.amount,
+                currency: orderHeader.currency,
+                name: "VoiceSOP",
+                description: `Upgrade to ${planId.toUpperCase()}`,
+                order_id: orderHeader.id,
+                prefill: orderHeader.prefill,
+                theme: {
+                    color: "#D32F2F" // brand-red
+                },
+                handler: async function (response: any) {
+                    const verifyRes = await fetch('/api/razorpay/verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ...response,
+                            userId: user.id,
+                            planId
+                        })
+                    });
+                    if (verifyRes.ok) {
+                        toast.success("Payment successful! Upgraded to " + planId.toUpperCase());
+                        router.push('/dashboard');
+                        router.refresh();
+                    } else {
+                        toast.error("Payment verification failed. Please contact support.");
+                    }
+                }
+            };
+
+            const rzp = new (window as any).Razorpay(options);
+            rzp.on('payment.failed', function (response: any) {
+                toast.error("Payment failed: " + response.error.description);
+            });
+            rzp.open();
+
+        } catch (error: any) {
+            toast.error(error.message);
+        } finally {
+            setLoadingPlan(null);
+        }
+    };
+
     const country = useMemo<'IN' | 'US'>(() => {
         if (typeof navigator === 'undefined') return 'US';
         const locale = (navigator.language || '').toLowerCase();
@@ -59,6 +141,7 @@ export default function Pricing() {
 
     return (
         <section id="pricing" className="py-16 sm:py-24 px-4 sm:px-6 relative z-10 animate-fade-in-up">
+            <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
             <div className="container mx-auto">
                 <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-20">
                     <h2 className="text-2xl sm:text-3xl md:text-5xl font-serif mb-4 sm:mb-6">Simple, transparent pricing</h2>
@@ -97,12 +180,13 @@ export default function Pricing() {
                             </ul>
 
                             <button
-                                onClick={() => router.push(plan.href)}
-                                className={`w-full py-4 rounded-xl font-bold transition-all ${plan.highlight
+                                onClick={() => handleCheckout(plan.planId)}
+                                disabled={loadingPlan === plan.planId}
+                                className={`w-full py-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${plan.highlight
                                     ? 'bg-brand-red hover:bg-red-600 text-white shadow-lg hover:shadow-red-500/30'
                                     : 'bg-gray-100 hover:bg-gray-200 text-off-black'
                                     }`}>
-                                {plan.cta}
+                                {loadingPlan === plan.planId ? <Loader2 size={20} className="animate-spin" /> : plan.cta}
                             </button>
                         </div>
                     ))}
