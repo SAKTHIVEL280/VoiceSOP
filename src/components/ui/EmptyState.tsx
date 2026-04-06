@@ -1,10 +1,9 @@
-import Link from 'next/link';
-import { Plus, Mic } from 'lucide-react';
+import { Mic } from 'lucide-react';
 import HeroButton from './HeroButton';
 
 export default function EmptyState() {
     return (
-        <div className="flex flex-col items-center justify-center p-12 text-center bg-gray-50 rounded-3xl border border-gray-100 min-h-[400px]">
+        <div className="flex flex-col items-center justify-center p-6 sm:p-8 md:p-12 text-center bg-gray-50 rounded-3xl border border-gray-100 min-h-60 sm:min-h-80 md:min-h-100">
             {/* Illustration Placeholder or Icon */}
             <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-sm mb-6">
                 <Mic size={40} className="text-gray-400" />

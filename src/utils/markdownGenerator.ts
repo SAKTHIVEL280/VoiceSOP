@@ -1,8 +1,12 @@
 interface SOPContent {
     purpose: string;
-    steps: { title: string; desc: string }[];
-    warnings?: string[];
-    checklist?: string[];
+    steps: {
+        title: string;
+        description: string;
+        warning?: string;
+        checklist?: string[];
+    }[];
+    glossary?: { term: string; definition: string }[];
 }
 
 export const generateMarkdown = (title: string, content: SOPContent) => {
@@ -13,24 +17,28 @@ export const generateMarkdown = (title: string, content: SOPContent) => {
         md += `## Purpose\n${content.purpose}\n\n`;
     }
 
-    if (content.warnings && content.warnings.length > 0) {
-        md += `> [!WARNING]\n`;
-        content.warnings.forEach(w => {
-            md += `> • ${w}\n`;
-        });
-        md += `\n`;
-    }
-
     md += `## Procedure Steps\n\n`;
     content.steps.forEach((step, index) => {
         md += `### Step ${index + 1}: ${step.title}\n`;
-        md += `${step.desc}\n\n`;
+        md += `${step.description}\n\n`;
+
+        if (step.warning) {
+            md += `> [!WARNING]\n> ${step.warning}\n\n`;
+        }
+
+        if (step.checklist && step.checklist.length > 0) {
+            md += `**Checklist:**\n`;
+            step.checklist.forEach(item => {
+                md += `- [ ] ${item}\n`;
+            });
+            md += `\n`;
+        }
     });
 
-    if (content.checklist && content.checklist.length > 0) {
-        md += `## Checklist\n\n`;
-        content.checklist.forEach(item => {
-            md += `- [ ] ${item}\n`;
+    if (content.glossary && content.glossary.length > 0) {
+        md += `## Glossary\n\n`;
+        content.glossary.forEach(item => {
+            md += `**${item.term}**: ${item.definition}\n\n`;
         });
     }
 

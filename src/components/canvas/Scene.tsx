@@ -163,10 +163,6 @@ function ResponsiveShapes() {
     );
 }
 
-function SceneContent() {
-    return <ResponsiveShapes />
-}
-
 export default function Scene() {
     return (
         <Canvas
@@ -178,6 +174,12 @@ export default function Scene() {
                 alpha: true,
                 powerPreference: "default",
                 failIfMajorPerformanceCaveat: true
+            }}
+            onCreated={({ gl }) => {
+                const canvas = gl.domElement;
+                canvas.addEventListener('webglcontextlost', (e) => {
+                    e.preventDefault();
+                });
             }}
         >
             <Suspense fallback={null}>

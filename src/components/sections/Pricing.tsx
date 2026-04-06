@@ -1,21 +1,23 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Check } from 'lucide-react';
 
 const plans = [
     {
         name: "Free",
-        price: "₹0",
+        inrPrice: "₹0",
+        usdPrice: "$0",
         period: "/forever",
         description: "Perfect for testing the waters.",
-        features: ["3 SOPs per month", "Basic AI processing", "PDF Export"],
+        features: ["3 free SOP generations per month", "Store 1 SOP at a time", "PDF Export"],
         cta: "Start Free",
         highlight: false
     },
     {
         name: "Pro",
-        price: "₹499",
+        inrPrice: "₹499",
+        usdPrice: "$10",
         period: "/month",
         description: "For serious business owners.",
         features: ["Unlimited SOPs", "Advanced Formatting (ISO Standard)", "Scope, Roles & Glossary Sections", "Priority Support"],
@@ -24,7 +26,8 @@ const plans = [
     },
     {
         name: "Team",
-        price: "₹9,999",
+        inrPrice: "₹9,999",
+        usdPrice: "$129",
         period: "/month",
         description: "For scaling agencies.",
         features: ["Everything in Pro", "5 Team Members", "Shared Library", "Custom Branding"],
@@ -34,19 +37,35 @@ const plans = [
 ];
 
 export default function Pricing() {
+    const country = useMemo<'IN' | 'US'>(() => {
+        if (typeof navigator === 'undefined') return 'US';
+        const locale = (navigator.language || '').toLowerCase();
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        return locale.includes('in') || timezone.includes('Asia/Kolkata') ? 'IN' : 'US';
+    }, []);
+
+    const displayPlans = useMemo(
+        () => plans.map((plan) => ({
+            ...plan,
+            price: country === 'IN' ? plan.inrPrice : plan.usdPrice,
+        })),
+        [country]
+    );
+
     return (
-        <section id="pricing" className="py-24 px-6 relative z-10 animate-fade-in-up">
+        <section id="pricing" className="py-16 sm:py-24 px-4 sm:px-6 relative z-10 animate-fade-in-up">
             <div className="container mx-auto">
-                <div className="text-center max-w-3xl mx-auto mb-20">
-                    <h2 className="text-4xl md:text-5xl font-serif mb-6">Simple, transparent pricing</h2>
-                    <p className="text-xl text-gray-600">Start for free, upgrade when you scale. No hidden fees.</p>
+                <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-20">
+                    <h2 className="text-2xl sm:text-3xl md:text-5xl font-serif mb-4 sm:mb-6">Simple, transparent pricing</h2>
+                    <p className="text-base sm:text-xl text-gray-600">Start for free, upgrade when you scale. No hidden fees.</p>
+                    <p className="text-xs sm:text-sm text-gray-400 mt-2">Prices shown for: {country === 'IN' ? 'India' : 'United States'}</p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-                    {plans.map((plan, index) => (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-6xl mx-auto">
+                    {displayPlans.map((plan, index) => (
                         <div
                             key={index}
-                            className={`relative p-8 rounded-3xl border flex flex-col ${plan.highlight ? 'bg-off-black text-white border-off-black shadow-2xl scale-105 z-10' : 'bg-white text-off-black border-gray-200'}`}
+                            className={`relative p-6 sm:p-8 rounded-3xl border flex flex-col ${plan.highlight ? 'bg-off-black text-white border-off-black shadow-2xl md:scale-105 z-10' : 'bg-white text-off-black border-gray-200'}`}
                         >
                             {plan.highlight && (
                                 <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-brand-red text-white px-4 py-1 rounded-full text-sm font-bold uppercase tracking-wide">
@@ -54,9 +73,9 @@ export default function Pricing() {
                                 </div>
                             )}
 
-                            <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
+                            <h3 className="text-xl sm:text-2xl font-bold mb-2">{plan.name}</h3>
                             <div className="flex items-baseline mb-4">
-                                <span className="text-4xl font-serif">{plan.price}</span>
+                                <span className="text-2xl sm:text-3xl lg:text-4xl font-serif">{plan.price}</span>
                                 <span className="opacity-60 ml-1">{plan.period}</span>
                             </div>
                             <p className={`mb-8 leading-relaxed ${plan.highlight ? 'opacity-80' : 'text-gray-600'}`}>

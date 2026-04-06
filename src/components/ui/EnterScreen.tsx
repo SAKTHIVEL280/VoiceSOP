@@ -37,7 +37,7 @@ export default function EnterScreen({ onEnter }: EnterScreenProps) {
                 className="flex flex-col items-center justify-center gap-6"
             >
                 {/* Logo or Brand */}
-                <h1 className="text-4xl md:text-6xl font-serif tracking-tighter">
+                <h1 className="text-3xl sm:text-4xl md:text-6xl font-serif tracking-tighter">
                     Voice<span className="text-brand-red">SOP</span>
                 </h1>
 
@@ -66,7 +66,7 @@ export default function EnterScreen({ onEnter }: EnterScreenProps) {
                         onClick={handleClick}
                         onMouseEnter={() => setIsHovering(true)}
                         onMouseLeave={() => setIsHovering(false)}
-                        className="group relative overflow-hidden bg-[#FF4D4D] text-white border-2 border-[#FF4D4D] px-8 py-3 rounded-full font-medium uppercase tracking-wider hover:bg-transparent hover:text-[#FF4D4D] transition-colors duration-300 min-w-[220px]"
+                        className="group relative overflow-hidden bg-[#FF4D4D] text-white border-2 border-[#FF4D4D] px-6 py-3 sm:px-8 rounded-full font-medium uppercase tracking-wider text-sm sm:text-base hover:bg-transparent hover:text-[#FF4D4D] transition-colors duration-300 min-w-[180px] sm:min-w-[220px]"
                     >
                         <span className="block transition-transform duration-500 ease-[cubic-bezier(0.87,0,0.13,1)] group-hover:-translate-y-[150%]">
                             Enter Experience

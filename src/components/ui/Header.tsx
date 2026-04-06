@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter, usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
@@ -12,9 +12,8 @@ import { useUI } from '@/context/UIContext';
 export default function Header() {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [user, setUser] = useState<User | null>(null);
-    const router = useRouter();
     const pathname = usePathname();
-    const supabase = createClient();
+    const supabase = useMemo(() => createClient(), []);
     const { hasEntered } = useUI();
 
     useEffect(() => {
@@ -34,10 +33,14 @@ export default function Header() {
     }, [supabase]);
 
     const handleSignOut = async () => {
-        await supabase.auth.signOut();
-        router.push('/');
-        router.refresh();
-        setIsMenuOpen(false);
+        try {
+            await supabase.auth.signOut();
+        } catch (error) {
+            console.error('Error signing out:', error);
+        } finally {
+            // Force hard redirect to ensure state is cleared and we leave dashboard
+            window.location.href = '/';
+        }
     };
 
     const navLinks = user
@@ -53,11 +56,14 @@ export default function Header() {
             { label: "Login", href: "/login" }
         ];
 
+    // Hide on dashboard pages (dashboard has its own navigation) and login page
+    if (pathname.startsWith('/dashboard') || pathname === '/login') return null;
+
     // If not entered, don't show anything (or show minimal overlay if needed by design, but typically hidden)
     if (!hasEntered) return null;
 
     return (
-        <header className="fixed top-0 right-0 z-[60] p-8 flex items-center gap-8 text-off-black">
+        <header className="fixed top-0 right-0 z-60 p-4 sm:p-8 flex items-center gap-4 sm:gap-8 text-off-black">
 
             {/* Minimal Top Right Links (Visible initially) - ONLY ON HOME PAGE */}
             {pathname === '/' && (
@@ -71,7 +77,7 @@ export default function Header() {
                         <Link
                             key={link.href}
                             href={link.href}
-                            className={`group relative overflow-hidden inline-block h-[32px] transition-colors ${pathname === link.href ? 'text-brand-red opacity-100 font-bold' : 'text-off-black/60 hover:text-off-black hover:opacity-100'} border border-transparent hover:border-black/10 rounded-full px-4 py-1.5`}
+                            className={`group relative overflow-hidden inline-block h-8 transition-colors ${pathname === link.href ? 'text-brand-red opacity-100 font-bold' : 'text-off-black/60 hover:text-off-black hover:opacity-100'} border border-transparent hover:border-black/10 rounded-full px-4 py-1.5`}
                         >
                             <span className="block transition-transform duration-500 ease-[cubic-bezier(0.87,0,0.13,1)] group-hover:-translate-y-[150%]">
                                 {link.label}
@@ -90,7 +96,7 @@ export default function Header() {
                 animate={{ scale: 1 }}
                 transition={{ delay: 0.6, type: "spring" }}
                 onClick={() => setIsMenuOpen(true)}
-                className="w-10 h-10 rounded-full bg-off-black text-white flex items-center justify-center hover:rotate-90 transition-transform cursor-pointer shadow-md"
+                className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-off-black text-white flex items-center justify-center hover:rotate-90 transition-transform cursor-pointer shadow-md"
             >
                 <div className="flex gap-1">
                     <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
@@ -108,7 +114,7 @@ export default function Header() {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             onClick={() => setIsMenuOpen(false)}
-                            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[70]"
+                            className="fixed inset-0 bg-black/80 backdrop-blur-md z-70"
                         />
 
                         {/* Side Panel */}
@@ -117,7 +123,7 @@ export default function Header() {
                             animate={{ x: 0 }}
                             exit={{ x: "100%" }}
                             transition={{ type: "tween", ease: [0.76, 0, 0.24, 1], duration: 0.8 }}
-                            className="fixed top-0 right-0 bottom-0 w-full md:w-[480px] bg-[#1a1a1a] text-[#e0e0e0] z-[80] p-12 flex flex-col justify-between shadow-2xl"
+                            className="fixed top-0 right-0 bottom-0 w-full md:w-120 bg-off-black text-[#e0e0e0] z-80 p-6 sm:p-12 flex flex-col justify-between shadow-2xl"
                         >
                             {/* Close Button */}
                             <div className="flex justify-end">
@@ -142,7 +148,7 @@ export default function Header() {
                                         <Link
                                             href={link.href}
                                             onClick={() => setIsMenuOpen(false)}
-                                            className={`block text-5xl md:text-6xl font-serif italic transition-all duration-300 hover:text-brand-red hover:translate-x-4 ${pathname === link.href ? 'text-brand-red translate-x-4' : ''
+                                            className={`block text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-serif italic transition-all duration-300 hover:text-brand-red hover:translate-x-4 ${pathname === link.href ? 'text-brand-red translate-x-4' : ''
                                                 }`}
                                         >
                                             <span className={`text-lg not-italic font-sans mr-6 align-top transition-colors ${pathname === link.href ? 'text-brand-red/60' : 'text-white/30'
@@ -176,9 +182,9 @@ export default function Header() {
                             {/* Footer Info */}
                             <div className="mt-auto pt-12 border-t border-white/10 flex flex-col gap-4 text-white/40 text-sm font-light">
                                 <div className="flex justify-between">
-                                    <span>Instagram</span>
-                                    <span>Twitter</span>
-                                    <span>LinkedIn</span>
+                                    <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Instagram</a>
+                                    <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Twitter</a>
+                                    <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">LinkedIn</a>
                                 </div>
                                 <p>VoiceSOP © {new Date().getFullYear()}</p>
                             </div>

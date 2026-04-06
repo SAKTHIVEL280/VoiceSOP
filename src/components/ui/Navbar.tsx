@@ -97,7 +97,7 @@ export default function Navbar() {
             {/* Fullscreen Overlay */}
             <div
                 ref={overlayRef}
-                className="fixed inset-0 bg-off-black z-40 translate-y-[-100%] flex flex-col justify-center items-center"
+                className="fixed inset-0 bg-off-black z-40 -translate-y-full flex flex-col justify-center items-center"
             >
                 <div ref={linksRef} className="flex flex-col gap-8 items-center">
                     {menuItems.map((item, index) => (
@@ -105,7 +105,7 @@ export default function Navbar() {
                             key={index}
                             href={item.href}
                             onClick={() => setIsOpen(false)}
-                            className="text-5xl md:text-7xl font-serif italic text-warm-grey hover:text-brand-red transition-colors duration-300 flex items-center gap-4 group"
+                            className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl font-serif italic text-warm-grey hover:text-brand-red transition-colors duration-300 flex items-center gap-4 group"
                         >
                             <span className="opacity-0 group-hover:opacity-100 -ml-12 transition-opacity duration-300">
                                 <ArrowRight size={40} className="text-brand-red" />
@@ -116,7 +116,7 @@ export default function Navbar() {
                 </div>
 
                 <div className="absolute bottom-12 left-0 w-full text-center text-gray-500 font-sans text-sm tracking-widest uppercase opacity-50">
-                    © 2024 VoiceSOP
+                    © {new Date().getFullYear()} VoiceSOP
                 </div>
             </div>
         </nav>

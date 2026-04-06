@@ -1,12 +1,17 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// Define interfaces to avoid implicit any errors
 interface SOPContent {
     purpose: string;
-    steps: { title: string; desc: string }[];
+    steps: {
+        title: string;
+        description: string;
+        warning?: string;
+        checklist?: string[];
+    }[];
     warnings?: string[];
     checklist?: string[];
+    glossary?: { term: string; definition: string }[];
 }
 
 export const generatePDF = (title: string, content: SOPContent) => {
@@ -50,31 +55,33 @@ export const generatePDF = (title: string, content: SOPContent) => {
 
     // 3. Warnings (if any)
     if (content.warnings && content.warnings.length > 0) {
-        doc.setFillColor(255, 240, 240);
-        doc.setDrawColor(255, 200, 200);
-
-        // Calculate height roughly
-        const warningLines = content.warnings.map(w => `• ${w}`);
-        const warningBlockHeight = (warningLines.length * 6) + 10;
-
-        doc.roundedRect(20, finalY, 170, warningBlockHeight, 2, 2, 'FD');
-
         doc.setFontSize(10);
         doc.setTextColor(200, 50, 50);
         doc.setFont("helvetica", "bold");
-        doc.text("WARNINGS", 25, finalY + 8);
+        doc.text("WARNINGS", 20, finalY);
+        finalY += 3;
 
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(150, 40, 40);
+        const warningBody = content.warnings.map(w => [w]);
 
-        let warnY = finalY + 14;
-        content.warnings.forEach(w => {
-            const lines = doc.splitTextToSize(`• ${w}`, 160);
-            doc.text(lines, 25, warnY);
-            warnY += (lines.length * 5);
+        autoTable(doc, {
+            startY: finalY,
+            body: warningBody,
+            theme: 'plain',
+            styles: {
+                fillColor: [255, 240, 240], // Light red background
+                textColor: [180, 40, 40], // Dark red text
+                fontSize: 10,
+                cellPadding: 4,
+                overflow: 'linebreak'
+            },
+            columnStyles: {
+                0: { cellWidth: 170 }
+            },
+            margin: { left: 20, right: 20 }
         });
 
-        finalY = warnY + 10;
+        // @ts-expect-error - jspdf-autotable adds lastAutoTable to doc
+        finalY = doc.lastAutoTable.finalY + 15;
     }
 
     // 4. Steps Table
@@ -85,11 +92,23 @@ export const generatePDF = (title: string, content: SOPContent) => {
 
     finalY += 5;
 
-    const tableBody = content.steps.map((step, index) => [
-        `Step ${index + 1}`,
-        step.title,
-        step.desc
-    ]);
+    const tableBody = content.steps.map((step, index) => {
+        let details = step.description || '';
+
+        if (step.warning) {
+            details += `\n\nWARNING: ${step.warning}`;
+        }
+
+        if (step.checklist && step.checklist.length > 0) {
+            details += `\n\nChecklist:\n` + step.checklist.map((item: string) => `[  ]  ${item}`).join('\n');
+        }
+
+        return [
+            `Step ${index + 1}`,
+            step.title || '',
+            details
+        ];
+    });
 
     autoTable(doc, {
         startY: finalY,
@@ -98,21 +117,19 @@ export const generatePDF = (title: string, content: SOPContent) => {
         theme: 'grid',
         headStyles: { fillColor: [25, 25, 25], textColor: 255, fontStyle: 'bold' },
         columnStyles: {
-            0: { cellWidth: 20, fontStyle: 'bold', textColor: [100, 100, 100] },
-            1: { cellWidth: 50, fontStyle: 'bold' },
-            2: { cellWidth: 'auto' }
+            0: { cellWidth: 20, fontStyle: 'bold', textColor: [100, 100, 100], valign: 'top' },
+            1: { cellWidth: 50, fontStyle: 'bold', valign: 'top' },
+            2: { cellWidth: 100, valign: 'top' } // Explicit width to prevent overflow
         },
         styles: { fontSize: 10, cellPadding: 4, overflow: 'linebreak' },
         margin: { left: 20, right: 20 }
     });
 
-    // Get Y after table
-    // @ts-ignore - autoTable adds lastAutoTable to doc object but ts doesn't know
+    // @ts-expect-error - jspdf-autotable adds lastAutoTable to doc
     finalY = doc.lastAutoTable.finalY + 15;
 
-    // 5. Checklist
+    // 5. Checklist (Global)
     if (content.checklist && content.checklist.length > 0) {
-        // Check for page break
         if (finalY > 250) {
             doc.addPage();
             finalY = 20;
@@ -128,19 +145,18 @@ export const generatePDF = (title: string, content: SOPContent) => {
         doc.setFont("helvetica", "normal");
         doc.setTextColor(40, 40, 40);
 
-        content.checklist.forEach(item => {
-            // Draw checkbox square
+        content.checklist.forEach((item: string) => {
+            // Basic Checkbox Drawing
             doc.setDrawColor(100, 100, 100);
-            doc.rect(20, finalY - 3, 4, 4);
+            doc.rect(20, finalY - 3.5, 4, 4); // Draw square
 
-            doc.text(item, 30, finalY);
-            finalY += 7;
+            const lines = doc.splitTextToSize(item, 160);
+            doc.text(lines, 30, finalY);
+            finalY += (lines.length * 6) + 2;
         });
     }
 
     // Footer
-    const pageCount = doc.internal.types.number.pageCount; // Incorrect usage in types sometimes
-    // Simplest footer
     const pages = doc.getNumberOfPages();
     for (let i = 1; i <= pages; i++) {
         doc.setPage(i);

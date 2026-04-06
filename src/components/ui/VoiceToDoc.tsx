@@ -1,6 +1,6 @@
 'use client';
 
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useMotionValueEvent, type MotionValue } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 
 interface VoiceToDocProps {
@@ -11,28 +11,22 @@ export default function VoiceToDoc({ isHovering }: VoiceToDocProps) {
     const barCount = 12;
     const bars = Array.from({ length: barCount });
 
-    // Mouse Tracking for Waveform Reactivity
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+    // Mouse Tracking with MotionValues (No Re-renders)
+    const mouseX = useMotionValue(0);
+    const mouseY = useMotionValue(0);
 
     useEffect(() => {
-        let animationFrameId: number;
         const handleMouseMove = (e: MouseEvent) => {
-            // Throttle with rAF
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = requestAnimationFrame(() => {
-                setMousePos({ x: e.clientX, y: e.clientY });
-            });
+            // Update MotionValues directly
+            mouseX.set(e.clientX);
+            mouseY.set(e.clientY);
         };
         window.addEventListener('mousemove', handleMouseMove);
-        return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            cancelAnimationFrame(animationFrameId);
-        }
-    }, []);
+        return () => window.removeEventListener('mousemove', handleMouseMove);
+    }, [mouseX, mouseY]);
 
     return (
-        <div ref={containerRef} className="flex items-center justify-center mb-8 relative w-64 h-64">
+        <div className="flex items-center justify-center mb-8 relative w-48 h-48 sm:w-64 sm:h-64">
             {/* Waveform -> Document Transformation */}
             <div className="relative w-40 h-52 flex items-center justify-center">
 
@@ -58,7 +52,8 @@ export default function VoiceToDoc({ isHovering }: VoiceToDocProps) {
                         index={i}
                         total={barCount}
                         isHovering={isHovering}
-                        mousePos={mousePos}
+                        mouseX={mouseX}
+                        mouseY={mouseY}
                     />
                 ))}
             </div>
@@ -66,11 +61,12 @@ export default function VoiceToDoc({ isHovering }: VoiceToDocProps) {
     );
 }
 
-function Bar({ index, total, isHovering, mousePos }: {
+function Bar({ index, total, isHovering, mouseX, mouseY }: {
     index: number,
     total: number,
     isHovering: boolean,
-    mousePos: { x: number, y: number }
+    mouseX: MotionValue<number>,
+    mouseY: MotionValue<number>
 }) {
     const waveGap = 12;
     const waveWidth = 4;
@@ -78,8 +74,8 @@ function Bar({ index, total, isHovering, mousePos }: {
     const barRef = useRef<HTMLDivElement>(null);
     const [scaleFactor, setScaleFactor] = useState(1);
 
-    // Calculate reactivity
-    useEffect(() => {
+    // Subscribe to MotionValues instead of Effect dependent on State
+    useMotionValueEvent(mouseX, "change", (latestX: number) => {
         if (isHovering || !barRef.current) {
             if (scaleFactor !== 1) setScaleFactor(1);
             return;
@@ -89,18 +85,22 @@ function Bar({ index, total, isHovering, mousePos }: {
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
 
-        const dist = Math.hypot(mousePos.x - centerX, mousePos.y - centerY);
+        const latestY = mouseY.get();
+        const dist = Math.hypot(latestX - centerX, latestY - centerY);
         const triggerRange = 600;
 
         if (dist < triggerRange) {
             const proximity = 1 - (dist / triggerRange);
             const effect = proximity * proximity;
-            setScaleFactor(1 + effect * 2.2);
-        } else {
+            const newScale = 1 + effect * 2.2;
+            // Only update if difference is significant to limit renders
+            if (Math.abs(newScale - scaleFactor) > 0.05) {
+                setScaleFactor(newScale);
+            }
+        } else if (scaleFactor !== 1) {
             setScaleFactor(1);
         }
-
-    }, [mousePos, isHovering]); // This dependency is what triggers the cascade
+    });
 
     // Document Props
     const docGap = 12;
@@ -110,6 +110,7 @@ function Bar({ index, total, isHovering, mousePos }: {
     const isShort = index === total - 1 || index === 4 || index === 8;
 
     // Base Wave Height
+    // Use stable ID for math to avoid hydration mismatch if possible, but index is stable here.
     const baseWaveHeight = 16 + Math.abs(Math.sin(index * 123.4)) * 32;
 
     return (

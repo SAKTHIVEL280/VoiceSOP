@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import VoiceRecorder from '@/components/ui/VoiceRecorder';
 import { Loader2 } from 'lucide-react';
@@ -13,7 +13,14 @@ export default function NewSOPPage() {
     const [isGenerating, setIsGenerating] = useState(false);
     const [checkingLimit, setCheckingLimit] = useState(true);
     const [isLimitReached, setIsLimitReached] = useState(false);
-    const supabase = createClient();
+    const [freeUsage, setFreeUsage] = useState<{ used: number; limit: number; storageUsed: number; storageLimit: number } | null>(null);
+    const [limitMessage, setLimitMessage] = useState('');
+    const supabase = useMemo(() => createClient(), []);
+
+    const getCurrentMonthKey = () => {
+        const now = new Date();
+        return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    };
 
     React.useEffect(() => {
         const checkLimits = async () => {
@@ -23,40 +30,102 @@ export default function NewSOPPage() {
             // Check Subscription Tier
             const { data: profile } = await supabase
                 .from('profiles')
-                .select('subscription_tier')
+                .select('*')
                 .eq('id', user.id)
                 .single();
 
-            // Check SOP Count (this month)
-            const startOfMonth = new Date();
-            startOfMonth.setDate(1);
-            startOfMonth.setHours(0, 0, 0, 0);
-
-            const { count } = await supabase
-                .from('sops')
-                .select('*', { count: 'exact', head: true })
-                .eq('user_id', user.id)
-                .gte('created_at', startOfMonth.toISOString());
-
-            const limit = 3;
+            const monthKey = getCurrentMonthKey();
+            let used = profile?.free_sop_monthly_used ?? 0;
+            const limit = profile?.free_sop_monthly_limit ?? 3;
+            const storageLimit = profile?.free_sop_storage_limit ?? 1;
             const tier = profile?.subscription_tier || 'free';
 
-            if (tier === 'free' && (count || 0) >= limit) {
-                setIsLimitReached(true);
+            if (tier === 'free' && profile?.free_sop_month_key !== monthKey) {
+                used = 0;
+                await supabase
+                    .from('profiles')
+                    .update({ free_sop_monthly_used: 0, free_sop_month_key: monthKey })
+                    .eq('id', user.id);
+            }
+
+            const { count: storageUsed } = await supabase
+                .from('sops')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', user.id);
+
+            setFreeUsage({ used, limit, storageUsed: storageUsed || 0, storageLimit });
+
+            if (tier === 'free') {
+                if (used >= limit) {
+                    setLimitMessage('You used all 3 free generation tries for this month.');
+                    setIsLimitReached(true);
+                } else if ((storageUsed || 0) >= storageLimit) {
+                    setLimitMessage('Free plan allows only one stored SOP at a time. Delete your existing SOP to continue.');
+                    setIsLimitReached(true);
+                }
             }
             setCheckingLimit(false);
         };
         checkLimits();
-    }, []);
+    }, [supabase]);
 
     const handleGeneration = async (audioBlob: Blob, transcript: string) => {
         setIsGenerating(true);
         let createdSopId = null;
 
         try {
+            let resolvedTranscript = transcript.trim();
+
             // 1. Get User
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("No user found");
+
+            // 1b. Enforce free plan rules before upload (monthly tries + one stored SOP)
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('subscription_tier, free_sop_monthly_limit, free_sop_monthly_used, free_sop_month_key, free_sop_storage_limit')
+                .eq('id', user.id)
+                .single();
+
+            if ((profile?.subscription_tier || 'free') === 'free') {
+                const monthKey = getCurrentMonthKey();
+                const used = profile?.free_sop_month_key === monthKey ? (profile?.free_sop_monthly_used || 0) : 0;
+                const limit = profile?.free_sop_monthly_limit || 3;
+                const storageLimit = profile?.free_sop_storage_limit || 1;
+
+                const { count: storageUsed } = await supabase
+                    .from('sops')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('user_id', user.id);
+
+                if (used >= limit) {
+                    throw new Error('monthly_limit');
+                }
+                if ((storageUsed || 0) >= storageLimit) {
+                    throw new Error('storage_limit');
+                }
+            }
+
+            // 1c. Auto-transcribe audio when transcript is missing/too short.
+            if (resolvedTranscript.length <= 10) {
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'input-audio.webm');
+
+                const transcribeResponse = await fetch('/api/transcribe', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const transcribeData = await transcribeResponse.json();
+                if (!transcribeResponse.ok) {
+                    throw new Error(transcribeData.error || 'transcription_failed');
+                }
+
+                resolvedTranscript = (transcribeData.text || '').trim();
+                if (resolvedTranscript.length <= 10) {
+                    throw new Error('transcription_too_short');
+                }
+            }
 
             // 2. Upload Audio
             const filename = `${user.id}/${Date.now()}.webm`;
@@ -66,10 +135,8 @@ export default function NewSOPPage() {
 
             if (uploadError) throw uploadError;
 
-            // 3. Get Public URL
-            const { data: { publicUrl } } = supabase.storage
-                .from('audio-recordings')
-                .getPublicUrl(filename);
+            // 3. Store the storage path (signed URLs are generated on-the-fly when viewing)
+            const storagePath = filename;
 
             // 4. Create SOP Record (DRAFT STATE)
             const { data: sopData, error: dbError } = await supabase
@@ -77,7 +144,7 @@ export default function NewSOPPage() {
                 .insert({
                     user_id: user.id,
                     title: 'Untitled SOP (Processing)',
-                    audio_url: publicUrl,
+                    audio_url: storagePath,
                     tags: ['Draft', 'Processing']
                 })
                 .select()
@@ -86,16 +153,24 @@ export default function NewSOPPage() {
             if (dbError) throw dbError;
             createdSopId = sopData.id;
 
-            // 5. Call AI Generation API
-            const apiResponse = await fetch('/api/generate-sop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    audioUrl: publicUrl,
-                    sopId: sopData.id,
-                    transcript: transcript
-                }),
-            });
+            // 5. Call AI Generation API (30-second timeout)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            let apiResponse: Response;
+            try {
+                apiResponse = await fetch('/api/generate-sop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        audioUrl: storagePath,
+                        sopId: sopData.id,
+                        transcript: resolvedTranscript,
+                    }),
+                    signal: controller.signal,
+                });
+            } finally {
+                clearTimeout(timeoutId);
+            }
 
             if (!apiResponse.ok) {
                 const errorData = await apiResponse.json();
@@ -108,13 +183,17 @@ export default function NewSOPPage() {
             router.push(`/dashboard/sop/${sopData.id}`);
             router.refresh();
 
-        } catch (error: any) {
-            console.error("Error creating SOP:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
-            console.log("Raw Error:", error);
+        } catch (error: unknown) {
+            console.error("Error creating SOP:", error);
 
-            if (error.message.includes("quota")) {
-                toast.error("Monthly quota reached. Upgrade to Pro!");
+            if (error instanceof Error && error.message.includes("monthly_limit")) {
+                toast.error("You used all 3 free tries for this month. Upgrade to Pro.");
                 setIsLimitReached(true);
+            } else if (error instanceof Error && error.message.includes("storage_limit")) {
+                toast.error("Free plan allows only one stored SOP. Delete existing SOP first.");
+                setIsLimitReached(true);
+            } else if (error instanceof Error && error.message.includes("transcription")) {
+                toast.error("Could not auto-transcribe this audio. Please try a clearer file.");
             } else {
                 toast.error("Generation possibly failed. Saved as Draft.");
                 if (createdSopId) {
@@ -135,15 +214,17 @@ export default function NewSOPPage() {
 
     if (isLimitReached) {
         return (
-            <div className="p-8 max-w-4xl mx-auto h-full flex flex-col items-center justify-center text-center">
+            <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto h-full flex flex-col items-center justify-center text-center">
                 <div className="bg-red-50 p-6 rounded-full mb-6">
                     <Loader2 size={48} className="text-brand-red" />
                 </div>
-                <h1 className="text-3xl font-serif italic text-off-black mb-4">Monthly Limit Reached</h1>
+                <h1 className="text-2xl sm:text-3xl font-serif italic text-off-black mb-3 sm:mb-4">Free Plan Limit</h1>
                 <p className="text-gray-600 max-w-md mb-8">
-                    You have reached the limit of 3 SOPs for this month on the Free plan.
-                    Upgrade to Pro for unlimited SOPs.
+                    {limitMessage || 'You reached the free plan limit.'}
                 </p>
+                {freeUsage && (
+                    <p className="text-sm text-gray-500 mb-6">Monthly tries: {freeUsage.used} / {freeUsage.limit} · Stored SOPs: {freeUsage.storageUsed} / {freeUsage.storageLimit}</p>
+                )}
                 <button
                     onClick={() => router.push('/#pricing')}
                     className="bg-brand-red text-white px-8 py-3 rounded-full font-bold hover:bg-red-600 transition-colors shadow-lg"
@@ -188,11 +269,11 @@ export default function NewSOPPage() {
     }
 
     return (
-        <div className="p-8 max-w-4xl mx-auto h-full flex flex-col">
-            <div className="mb-8">
-                <h1 className="text-3xl font-serif italic text-off-black mb-2">Record New SOP</h1>
-                <p className="text-gray-500">
-                    Explain the process clearly. Our AI will handle the formatting, numbering, and structure.
+        <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto h-full flex flex-col">
+            <div className="mb-4 sm:mb-8">
+                <h1 className="text-2xl sm:text-3xl font-serif italic text-off-black mb-1 sm:mb-2">Create New SOP</h1>
+                <p className="text-sm sm:text-base text-gray-500">
+                    Record now or upload an audio file, then provide transcript details. Our AI will handle formatting, numbering, and structure.
                 </p>
             </div>
 

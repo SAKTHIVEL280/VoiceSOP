@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, RotateCcw } from 'lucide-react';
+import { Play, Pause } from 'lucide-react';
 
 interface CustomAudioPlayerProps {
     src: string;
@@ -12,6 +12,7 @@ export default function CustomAudioPlayer({ src }: CustomAudioPlayerProps) {
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
     const [duration, setDuration] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
 
     useEffect(() => {
         const audio = audioRef.current;
@@ -20,6 +21,7 @@ export default function CustomAudioPlayer({ src }: CustomAudioPlayerProps) {
         const updateProgress = () => {
             if (audio.duration) {
                 setProgress((audio.currentTime / audio.duration) * 100);
+                setCurrentTime(audio.currentTime);
             }
         };
 
@@ -37,6 +39,7 @@ export default function CustomAudioPlayer({ src }: CustomAudioPlayerProps) {
         audio.addEventListener('ended', handleEnded);
 
         return () => {
+            audio.pause();
             audio.removeEventListener('timeupdate', updateProgress);
             audio.removeEventListener('loadedmetadata', setAudioDuration);
             audio.removeEventListener('ended', handleEnded);
@@ -48,7 +51,9 @@ export default function CustomAudioPlayer({ src }: CustomAudioPlayerProps) {
         if (isPlaying) {
             audioRef.current.pause();
         } else {
-            audioRef.current.play();
+            audioRef.current.play().catch(() => {
+                // Browser autoplay policy may reject
+            });
         }
         setIsPlaying(!isPlaying);
     };
@@ -68,12 +73,12 @@ export default function CustomAudioPlayer({ src }: CustomAudioPlayerProps) {
     };
 
     return (
-        <div className="flex items-center gap-3 bg-gray-100 rounded-full px-4 py-2 min-w-[240px]">
+        <div className="flex items-center gap-2 sm:gap-3 bg-gray-100 rounded-full px-3 sm:px-4 py-2 min-w-0 w-full max-w-60">
             <audio ref={audioRef} src={src} preload="metadata" />
 
             <button
                 onClick={togglePlay}
-                className="w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm text-off-black hover:scale-105 transition-all flex-shrink-0"
+                className="w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-sm text-off-black hover:scale-105 transition-all shrink-0"
             >
                 {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" className="ml-0.5" />}
             </button>
@@ -90,7 +95,7 @@ export default function CustomAudioPlayer({ src }: CustomAudioPlayerProps) {
             </div>
 
             <span className="text-xs font-mono text-gray-500 w-10 text-right">
-                {formatTime(audioRef.current?.currentTime || 0)}
+                {formatTime(currentTime)}
             </span>
         </div>
     );

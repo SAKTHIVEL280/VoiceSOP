@@ -15,7 +15,7 @@ export async function updateSession(request: NextRequest) {
                     return request.cookies.getAll()
                 },
                 setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value, options }) => {
+                    cookiesToSet.forEach(({ name, value }) => {
                         request.cookies.set(name, value)
                     })
 
@@ -44,7 +44,30 @@ export async function updateSession(request: NextRequest) {
     // If this is not done, you may be causing the browser and server to go out
     // of sync and terminate the user's session prematurely!
 
-    await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // Protect dashboard routes — redirect unauthenticated users to login
+    if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+        const loginUrl = request.nextUrl.clone()
+        loginUrl.pathname = '/login'
+        loginUrl.searchParams.set('next', request.nextUrl.pathname)
+        const redirectResponse = NextResponse.redirect(loginUrl)
+        supabaseResponse.cookies.getAll().forEach(({ name, value }) => {
+            redirectResponse.cookies.set(name, value)
+        })
+        return redirectResponse
+    }
+
+    // Keep authenticated users out of login page
+    if (user && request.nextUrl.pathname === '/login') {
+        const dashboardUrl = request.nextUrl.clone()
+        dashboardUrl.pathname = '/dashboard'
+        const redirectResponse = NextResponse.redirect(dashboardUrl)
+        supabaseResponse.cookies.getAll().forEach(({ name, value }) => {
+            redirectResponse.cookies.set(name, value)
+        })
+        return redirectResponse
+    }
 
     return supabaseResponse
 }

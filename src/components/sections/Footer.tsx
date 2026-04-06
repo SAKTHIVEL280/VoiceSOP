@@ -1,11 +1,11 @@
 import React from 'react';
-import { Twitter, Linkedin, Mail } from 'lucide-react';
 import Link from 'next/link';
+import { Twitter, Linkedin, Mail } from 'lucide-react';
 
 export default function Footer() {
     return (
-        <footer className="bg-off-black text-white py-20 px-6 relative z-10">
-            <div className="container mx-auto grid grid-cols-1 md:grid-cols-4 gap-12">
+        <footer className="bg-off-black text-white py-12 sm:py-16 lg:py-20 px-4 sm:px-6 relative z-10">
+            <div className="container mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 sm:gap-12">
                 <div className="flex flex-col gap-4">
                     <span className="text-2xl font-serif italic text-brand-red">VoiceSOP</span>
                     <p className="text-gray-400 text-sm leading-relaxed">
@@ -27,34 +27,30 @@ export default function Footer() {
                 <div>
                     <h4 className="font-bold mb-6 text-lg">Product</h4>
                     <ul className="space-y-4 text-gray-400 text-sm">
-                        <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
-                        <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li>
-                        <li><a href="#" className="hover:text-white transition-colors">Roadmap</a></li>
+                        <li><a href="/#features" className="hover:text-white transition-colors">Features</a></li>
+                        <li><Link href="/pricing" className="hover:text-white transition-colors">Pricing</Link></li>
                     </ul>
                 </div>
 
                 <div>
-                    <h4 className="font-bold mb-6 text-lg">Resources</h4>
+                    <h4 className="font-bold mb-6 text-lg">Legal</h4>
                     <ul className="space-y-4 text-gray-400 text-sm">
-                        <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
-                        <li><a href="#" className="hover:text-white transition-colors">Templates</a></li>
-                        <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
+                        <li><Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
+                        <li><Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link></li>
+                        <li><Link href="/refund" className="hover:text-white transition-colors">Refund Policy</Link></li>
                     </ul>
                 </div>
 
                 <div>
                     <h4 className="font-bold mb-6 text-lg">Company</h4>
                     <ul className="space-y-4 text-gray-400 text-sm">
-                        <li><a href="#" className="hover:text-white transition-colors">About</a></li>
-                        <li><a href="#" className="hover:text-white transition-colors">Contact</a></li>
-                        <li><a href="#" className="hover:text-white transition-colors">Privacy</a></li>
-                        <li><a href="#" className="hover:text-white transition-colors">Terms</a></li>
+                        <li><Link href="/contact" className="hover:text-white transition-colors">Contact Us</Link></li>
                     </ul>
                 </div>
             </div>
 
             <div className="container mx-auto mt-20 pt-8 border-t border-white/10 text-center text-gray-500 text-sm">
-                <p>© 2025 VoiceSOP. All rights reserved.</p>
+                <p>© {new Date().getFullYear()} VoiceSOP. All rights reserved.</p>
             </div>
         </footer>
     );

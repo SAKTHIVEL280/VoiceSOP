@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, Play, Pause, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Mic, Play, RefreshCw, Upload } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 // Polyfill types for SpeechRecognition
 interface SpeechRecognitionEvent extends Event {
+    resultIndex: number;
     results: SpeechRecognitionResultList;
 }
 
@@ -36,44 +37,92 @@ interface SpeechRecognition extends EventTarget {
     abort(): void;
     onresult: (event: SpeechRecognitionEvent) => void;
     onend: () => void;
-    onerror: (event: any) => void;
+    onerror: (event: Event & { error: string }) => void;
 }
 
 declare global {
     interface Window {
-        SpeechRecognition: any;
-        webkitSpeechRecognition: any;
+        SpeechRecognition: new () => SpeechRecognition;
+        webkitSpeechRecognition: new () => SpeechRecognition;
     }
 }
 
 export default function VoiceRecorder({ onComplete }: { onComplete: (blob: Blob, transcript: string) => void }) {
+    const [inputMode, setInputMode] = useState<'record' | 'upload'>('record');
     const [isRecording, setIsRecording] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);
+    const [isPaused] = useState(false);
     const [timer, setTimer] = useState(0);
     const [transcript, setTranscript] = useState('');
-    const [finalTranscript, setFinalTranscript] = useState(''); // For editing
+    const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
 
-    const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
     const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
     const chunksRef = useRef<BlobPart[]>([]);
+    const mediaStreamRef = useRef<MediaStream | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
     const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
 
-    // Timer Logic
+    const MAX_RECORDING_SECONDS = 600; // 10 minutes
+    const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25 MB
+
+    const resetRecorderState = useCallback(() => {
+        setIsRecording(false);
+        setTimer(0);
+        setAudioBlob(null);
+        setTranscript('');
+        setUploadedFileName(null);
+    }, []);
+
+    const stopRecording = useCallback(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        if (speechRecognitionRef.current) {
+            speechRecognitionRef.current.stop();
+        }
+        setIsRecording(false);
+    }, []);
+
+    // Timer Logic — includes auto-stop at max duration
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if (isRecording && !isPaused) {
             interval = setInterval(() => {
-                setTimer((prev) => prev + 1);
+                setTimer((prev) => {
+                    const next = prev + 1;
+                    if (next >= MAX_RECORDING_SECONDS) {
+                        // Schedule stop outside of setState to avoid cascading renders
+                        queueMicrotask(() => stopRecording());
+                    }
+                    return next;
+                });
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [isRecording, isPaused]);
+    }, [isRecording, isPaused, stopRecording]);
+
+    // Cleanup speech recognition, media recorder, and mic stream on unmount
+    useEffect(() => {
+        return () => {
+            if (speechRecognitionRef.current) {
+                speechRecognitionRef.current.abort();
+                speechRecognitionRef.current = null;
+            }
+            if (mediaStreamRef.current) {
+                mediaStreamRef.current.getTracks().forEach(track => track.stop());
+                mediaStreamRef.current = null;
+            }
+        };
+    }, []);
 
     const startRecording = async () => {
         try {
+            if (inputMode !== 'record') {
+                setInputMode('record');
+            }
             // 1. Audio Recording
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaStreamRef.current = stream;
             const recorder = new MediaRecorder(stream);
             chunksRef.current = [];
 
@@ -91,7 +140,7 @@ export default function VoiceRecorder({ onComplete }: { onComplete: (blob: Blob,
             };
 
             recorder.start();
-            setMediaRecorder(recorder);
+            mediaRecorderRef.current = recorder;
 
             // 2. Speech Recognition
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -102,14 +151,11 @@ export default function VoiceRecorder({ onComplete }: { onComplete: (blob: Blob,
                 recognition.lang = 'en-US';
 
                 recognition.onresult = (event: SpeechRecognitionEvent) => {
-                    let interimTranscript = '';
                     let final = '';
 
                     for (let i = event.resultIndex; i < event.results.length; ++i) {
                         if (event.results[i].isFinal) {
                             final += event.results[i][0].transcript;
-                        } else {
-                            interimTranscript += event.results[i][0].transcript;
                         }
                     }
 
@@ -119,7 +165,7 @@ export default function VoiceRecorder({ onComplete }: { onComplete: (blob: Blob,
                 };
 
                 // Keep alive logic is simple here, might need more robust handling for production but ok for MVP
-                recognition.onerror = (event: any) => {
+                recognition.onerror = (event: Event & { error: string }) => {
                     console.error("Speech recognition error", event.error);
                 };
 
@@ -133,23 +179,42 @@ export default function VoiceRecorder({ onComplete }: { onComplete: (blob: Blob,
             setTimer(0);
             setAudioBlob(null);
             setTranscript('');
-            setFinalTranscript('');
+            setUploadedFileName(null);
         } catch (err) {
             console.error("Error accessing microphone:", err);
             alert("Could not access microphone. Please allow permissions.");
         }
     };
 
-    const stopRecording = () => {
-        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-            mediaRecorder.stop();
+    const handleUploadAudio = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('audio/')) {
+            alert('Please choose a valid audio file.');
+            event.target.value = '';
+            return;
         }
-        if (speechRecognitionRef.current) {
-            speechRecognitionRef.current.stop();
+
+        if (file.size > MAX_AUDIO_SIZE) {
+            alert('Audio file is too large (max 25 MB). Please upload a shorter file.');
+            event.target.value = '';
+            return;
         }
-        setIsRecording(false);
-        // Sync final transcript for editing
-        setFinalTranscript(transcript);
+
+        if (isRecording) {
+            stopRecording();
+        }
+
+        setInputMode('upload');
+        setAudioBlob(file);
+        setUploadedFileName(file.name);
+        setTimer(0);
+
+        // Upload path does not auto-transcribe in current backend, so transcript is user-provided.
+        if (!transcript) {
+            setTranscript('');
+        }
     };
 
     const toggleRecording = () => {
@@ -167,117 +232,170 @@ export default function VoiceRecorder({ onComplete }: { onComplete: (blob: Blob,
     };
 
     return (
-        <div className="w-full max-w-3xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100 flex flex-col h-[600px]">
-            {/* Header / Timer */}
-            <div className="bg-off-black text-white p-6 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                    <div className={`w-3 h-3 rounded-full ${isRecording && !isPaused ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`} />
-                    <span className="font-mono text-xl">{formatTime(timer)}</span>
+        <div className="w-full max-w-5xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
+            <div className="bg-off-black text-white px-5 sm:px-7 py-5 flex items-center justify-between">
+                <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-gray-400">Audio Input</p>
+                    <h2 className="text-lg sm:text-xl font-semibold mt-1">SOP Source</h2>
                 </div>
-                <span className="uppercase text-xs tracking-widest text-gray-400 font-sans">
-                    {isRecording ? (isPaused ? 'Paused' : 'Recording...') : 'Ready to Record'}
-                </span>
-            </div>
-
-            {/* Visualizer Area */}
-            <div className="bg-off-black h-32 flex items-center justify-center gap-1 border-t border-white/10 relative overflow-hidden flex-shrink-0">
-                {/* Mock Waveform Bars */}
-                {isRecording && !isPaused ? (
-                    Array.from({ length: 40 }).map((_, i) => (
-                        <motion.div
-                            key={i}
-                            className="w-1.5 bg-brand-red rounded-full"
-                            animate={{
-                                height: [10, ((i % 5) + 2) * 10, 10],
-                                opacity: [0.5, 1, 0.5]
-                            }}
-                            transition={{
-                                duration: 0.5,
-                                repeat: Infinity,
-                                repeatType: "reverse",
-                                delay: i * 0.05
-                            }}
-                        />
-                    ))
-                ) : (
-                    <div className="w-full h-0.5 bg-gray-700" />
-                )}
-            </div>
-
-            {/* Transcript Area */}
-            <div className="flex-1 p-6 bg-gray-50 overflow-hidden flex flex-col">
-                <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wide">Transcript</h3>
-                    {audioBlob && !isRecording && <span className="text-xs text-brand-red font-medium">Editable</span>}
+                <div className="text-right">
+                    <div className="font-mono text-xl">{formatTime(timer)}</div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-gray-400 mt-1">
+                        {isRecording ? 'Recording' : inputMode === 'upload' ? 'Upload Mode' : 'Ready'}
+                    </p>
                 </div>
-
-                {isRecording ? (
-                    <div className="flex-1 overflow-y-auto p-4 bg-white rounded-xl border border-gray-200">
-                        {transcript ? (
-                            <p className="text-lg text-off-black leading-relaxed whitespace-pre-wrap">{transcript}</p>
-                        ) : (
-                            <p className="text-gray-400 italic">Listening...</p>
-                        )}
-                        <div className="h-4" /> {/* Spacer for auto-scroll if we add ref */}
-                    </div>
-                ) : audioBlob ? (
-                    <textarea
-                        value={transcript}
-                        onChange={(e) => setTranscript(e.target.value)}
-                        className="flex-1 w-full p-4 bg-white rounded-xl border-2 border-brand-red/10 focus:border-brand-red focus:ring-4 focus:ring-brand-red/10 outline-none text-lg text-off-black leading-relaxed resize-none transition-all"
-                        placeholder="Transcript will appear here..."
-                    />
-                ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-                        <Mic size={48} className="text-gray-200 mb-4" />
-                        <p className="text-gray-400 italic">
-                            Tap the microphone to start recording.<br />
-                            Your words will be transcribed in real-time.
-                        </p>
-                    </div>
-                )}
             </div>
 
-            {/* Controls */}
-            <div className="p-6 bg-white border-t border-gray-100 flex justify-center items-center gap-6">
-                {!isRecording ? (
-                    audioBlob ? (
-                        // If checking finished, show Record Again (Reset) or just Play
-                        <button
-                            onClick={toggleRecording}
-                            className="flex items-center gap-2 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-off-black rounded-full font-medium transition-colors"
-                        >
-                            <RefreshCw size={18} />
-                            Record Again
-                        </button>
+            <div className="p-4 sm:p-6 border-b border-gray-100 bg-gray-50">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <button
+                        onClick={() => {
+                            setInputMode('record');
+                            setUploadedFileName(null);
+                        }}
+                        className={`rounded-2xl px-4 py-3 text-left border transition-all ${inputMode === 'record'
+                            ? 'bg-white border-off-black shadow-sm'
+                            : 'bg-white border-gray-200 hover:border-gray-300'
+                            }`}
+                    >
+                        <div className="flex items-center gap-2 text-sm font-semibold text-off-black">
+                            <Mic size={16} /> Record with Microphone
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Best when speaking live with instant transcript support.</p>
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            setInputMode('upload');
+                            if (isRecording) stopRecording();
+                        }}
+                        className={`rounded-2xl px-4 py-3 text-left border transition-all ${inputMode === 'upload'
+                            ? 'bg-white border-off-black shadow-sm'
+                            : 'bg-white border-gray-200 hover:border-gray-300'
+                            }`}
+                    >
+                        <div className="flex items-center gap-2 text-sm font-semibold text-off-black">
+                            <Upload size={16} /> Upload Existing Recording
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Attach audio file, then provide transcript for generation.</p>
+                    </button>
+                </div>
+            </div>
+
+            <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
+                <section className="lg:col-span-2 rounded-2xl border border-gray-100 bg-gray-50 p-4 sm:p-5">
+                    <h3 className="text-xs uppercase tracking-[0.14em] text-gray-500 font-semibold mb-3">Input Controls</h3>
+
+                    {inputMode === 'record' ? (
+                        <div className="space-y-4">
+                            <div className="rounded-xl bg-off-black p-4 h-32 flex items-center justify-center gap-1 overflow-hidden">
+                                {isRecording ? (
+                                    Array.from({ length: 28 }).map((_, i) => (
+                                        <motion.div
+                                            key={i}
+                                            className="w-1 bg-brand-red rounded-full"
+                                            animate={{ height: [8, ((i % 6) + 2) * 8, 8], opacity: [0.55, 1, 0.55] }}
+                                            transition={{ duration: 0.6, repeat: Infinity, repeatType: 'reverse', delay: i * 0.03 }}
+                                        />
+                                    ))
+                                ) : (
+                                    <p className="text-xs text-gray-400 uppercase tracking-widest">Waveform Idle</p>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={toggleRecording}
+                                className={`w-full h-11 rounded-xl font-semibold text-sm transition-colors ${isRecording
+                                    ? 'bg-off-black text-white hover:bg-gray-800'
+                                    : 'bg-brand-red text-white hover:bg-red-600'
+                                    }`}
+                            >
+                                {isRecording ? 'Stop Recording' : 'Start Recording'}
+                            </button>
+
+                            {!isRecording && audioBlob && (
+                                <button
+                                    onClick={() => {
+                                        resetRecorderState();
+                                        startRecording();
+                                    }}
+                                    className="w-full h-11 rounded-xl bg-white border border-gray-200 text-off-black text-sm font-medium hover:bg-gray-100"
+                                >
+                                    <span className="inline-flex items-center gap-2"><RefreshCw size={14} /> Record Again</span>
+                                </button>
+                            )}
+                        </div>
                     ) : (
-                        <button
-                            onClick={toggleRecording}
-                            className="w-16 h-16 rounded-full bg-brand-red text-white flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-red-200"
-                        >
-                            <Mic size={28} />
-                        </button>
-                    )
-                ) : (
-                    <>
-                        <button
-                            onClick={toggleRecording}
-                            className="w-16 h-16 rounded-full bg-off-black text-white flex items-center justify-center hover:scale-105 transition-transform shadow-lg"
-                        >
-                            <Square size={24} fill="currentColor" />
-                        </button>
-                    </>
-                )}
+                        <div className="space-y-4">
+                            <label className="w-full h-32 rounded-xl border-2 border-dashed border-gray-300 bg-white flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-brand-red transition-colors">
+                                <Upload size={18} className="text-gray-500" />
+                                <span className="text-sm font-medium text-off-black">Choose Audio File</span>
+                                <span className="text-xs text-gray-500">Up to 25 MB · audio/*</span>
+                                <input type="file" accept="audio/*" className="hidden" onChange={handleUploadAudio} />
+                            </label>
+
+                            {uploadedFileName && (
+                                <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 flex items-center justify-between gap-3">
+                                    <span className="text-xs text-gray-600 truncate" title={uploadedFileName}>{uploadedFileName}</span>
+                                    <button onClick={resetRecorderState} className="text-xs text-gray-500 hover:text-gray-700 underline">Clear</button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </section>
+
+                <section className="lg:col-span-3 rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 flex flex-col min-h-[320px]">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-xs uppercase tracking-[0.14em] text-gray-500 font-semibold">Transcript</h3>
+                        {audioBlob && !isRecording && <span className="text-[11px] text-brand-red font-semibold">Editable</span>}
+                    </div>
+
+                    {isRecording ? (
+                        <div className="flex-1 rounded-xl border border-gray-200 bg-gray-50 p-4 overflow-y-auto" data-lenis-prevent>
+                            {transcript ? (
+                                <p className="text-[15px] leading-relaxed text-off-black whitespace-pre-wrap">{transcript}</p>
+                            ) : (
+                                <p className="text-sm text-gray-400 italic">Listening... start speaking.</p>
+                            )}
+                        </div>
+                    ) : audioBlob ? (
+                        <textarea
+                            value={transcript}
+                            onChange={(e) => setTranscript(e.target.value)}
+                            className="flex-1 w-full p-4 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-red/20 focus:border-brand-red text-[15px] leading-relaxed resize-none"
+                            placeholder={inputMode === 'upload' ? 'Transcript (optional). If left empty, we will auto-transcribe your uploaded audio.' : 'Transcript appears here and can be edited before generation...'}
+                        />
+                    ) : (
+                        <div className="flex-1 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 flex flex-col items-center justify-center text-center">
+                            <Mic size={26} className="text-gray-300 mb-3" />
+                            <p className="text-sm text-gray-500">
+                                {inputMode === 'upload'
+                                    ? 'Upload audio first. Transcript is optional and can be auto-generated.'
+                                    : 'Press Start Recording and we will capture your transcript live.'}
+                            </p>
+                        </div>
+                    )}
+                </section>
+            </div>
+
+            <div className="px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-xs text-gray-500">
+                    {audioBlob ? 'Ready to generate SOP from current audio and transcript.' : 'Add audio source to continue.'}
+                </p>
 
                 {audioBlob && !isRecording && (
                     <button
                         onClick={() => {
-                            if (audioBlob) onComplete(audioBlob, transcript);
+                            if (audioBlob.size > MAX_AUDIO_SIZE) {
+                                alert('Recording is too large (max 25 MB). Please use a shorter audio file.');
+                                return;
+                            }
+                            onComplete(audioBlob, transcript);
                         }}
-                        className="bg-brand-red text-white px-8 py-3 rounded-full font-bold shadow-lg hover:bg-red-600 transition-colors flex items-center gap-2"
+                        className="h-11 px-6 rounded-xl bg-brand-red text-white font-semibold text-sm hover:bg-red-600 transition-colors inline-flex items-center gap-2"
                     >
                         Generate SOP
-                        <Play size={16} fill="currentColor" />
+                        <Play size={15} fill="currentColor" />
                     </button>
                 )}
             </div>

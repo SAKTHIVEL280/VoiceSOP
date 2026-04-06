@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useLayoutEffect, useState, useEffect } from "react";
+import { useRef, useLayoutEffect, useState, useEffect, useMemo } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useRouter } from 'next/navigation';
@@ -14,7 +14,7 @@ export default function Hero({ startAnimation = true }: { startAnimation?: boole
     const containerRef = useRef<HTMLElement>(null);
     const [user, setUser] = useState<User | null>(null);
     const router = useRouter();
-    const supabase = createClient();
+    const supabase = useMemo(() => createClient(), []);
 
     useEffect(() => {
         const checkUser = async () => {
@@ -41,7 +41,7 @@ export default function Hero({ startAnimation = true }: { startAnimation?: boole
     }, [startAnimation]);
 
     return (
-        <section ref={containerRef} className="relative min-h-screen w-full flex flex-col lg:flex-row items-center justify-between px-6 lg:px-20 py-32 overflow-hidden pointer-events-none">
+        <section ref={containerRef} className="relative min-h-screen w-full flex flex-col lg:flex-row items-center justify-between px-4 sm:px-6 lg:px-20 py-20 sm:py-32 overflow-hidden pointer-events-none">
 
             {/* LEFT: Title Area - MOVED UP FURTHER & RIGHT */}
             {/* Increased negative margin to -mt-80 (Up). Adjusted ml-16 (Right). */}
@@ -51,7 +51,7 @@ export default function Hero({ startAnimation = true }: { startAnimation?: boole
                     Voice-to-SOP
                 </p>
                 {/* Added lg:ml-12 to offset the title to the right of the label */}
-                <h1 className="hero-reveal text-[18vw] lg:text-[14vw] leading-[0.8] font-serif text-[#FF4D4D] tracking-tighter mix-blend-multiply lg:ml-12">
+                <h1 className="hero-reveal text-[15vw] sm:text-[16vw] lg:text-[14vw] leading-[0.8] font-serif text-[#FF4D4D] tracking-tighter mix-blend-multiply lg:ml-12">
                     Voice<span className="italic font-light">SOP</span>
                 </h1>
             </div>
@@ -62,10 +62,10 @@ export default function Hero({ startAnimation = true }: { startAnimation?: boole
             <div className="flex-1 lg:mt-96 lg:mr-10 z-10 pointer-events-auto">
                 {/* Headline: Bolder (font-bold) and Larger (text-4xl) */}
                 {/* Added <br> for forced break to keep '60 seconds' on line 2 */}
-                <h2 className="hero-reveal text-4xl font-serif font-bold italic leading-tight text-gray-900 mb-6">
-                    "Turn messy voice notes into <br className="hidden lg:block" /> professional SOPs in 60 seconds."
+                <h2 className="hero-reveal text-2xl sm:text-3xl md:text-4xl font-serif font-bold italic leading-tight text-gray-900 mb-4 sm:mb-6">
+                    &ldquo;Turn messy voice notes into <br className="hidden lg:block" /> professional SOPs in 60 seconds.&rdquo;
                 </h2>
-                <p className="hero-reveal text-gray-600 mb-10 leading-relaxed">
+                <p className="hero-reveal text-sm sm:text-base text-gray-600 mb-6 sm:mb-10 leading-normal sm:leading-relaxed">
                     A web app that converts voice recordings into professionally formatted Standard Operating Procedures with AI—saving business owners 4+ hours per document.
                 </p>
 
@@ -74,9 +74,12 @@ export default function Hero({ startAnimation = true }: { startAnimation?: boole
                         <HeroButton
                             onClick={() => router.push(user ? '/dashboard/new' : '/login')}
                             text={user ? 'Create New SOP' : 'Start Creating Free'}
-                            className="min-w-[260px]"
+                            className="min-w-65"
                         />
-                        <button className="bg-white border text-black px-8 py-4 rounded-full font-bold hover:bg-gray-50 transition-colors shadow-sm hover:shadow-md">
+                        <button
+                            onClick={() => router.push('/pricing')}
+                            className="bg-white border text-black px-5 py-3 sm:px-8 sm:py-4 rounded-full font-bold text-sm sm:text-base hover:bg-gray-50 transition-colors shadow-sm hover:shadow-md"
+                        >
                             Watch Demo
                         </button>
                     </div>

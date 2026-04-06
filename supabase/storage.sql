@@ -1,37 +1,42 @@
--- Enable the storage extension if not already enabled (usually enabled by default)
--- create extension if not exists "storage" schema "extensions";
+-- =====================
+-- VoiceSOP — Storage Policies
+-- Run after schema.sql in Supabase SQL Editor.
+-- =====================
 
--- 1. Create the 'audio-recordings' bucket
--- We use "insert into" because there isn't a "create bucket" command in standard SQL for Supabase Storage
+-- 1. Create the 'audio-recordings' bucket (PRIVATE — use signed URLs)
 insert into storage.buckets (id, name, public)
-values ('audio-recordings', 'audio-recordings', true)
-on conflict (id) do nothing;
+values ('audio-recordings', 'audio-recordings', false)
+on conflict (id) do update set public = false;
 
--- 2. Set up Security Policies for the bucket
+-- 2. Policies
 
--- Allow Authenticated users to upload files
+-- Authenticated users can upload audio to their own folder (enforces user_id prefix)
 drop policy if exists "Authenticated users can upload audio" on storage.objects;
 create policy "Authenticated users can upload audio"
 on storage.objects for insert
 with check (
-  bucket_id = 'audio-recordings' 
+  bucket_id = 'audio-recordings'
   and auth.role() = 'authenticated'
+  and (storage.foldername(name))[1] = auth.uid()::text
 );
 
--- Allow Users to view their own files (OR public if you prefer)
--- If public=true above, technically anyone can read if they have the URL.
--- But we can restrict "select" if valuable. For now, let's allow public read for simplicity of the prototype.
+-- Users can only read their own audio files
 drop policy if exists "Public can view audio" on storage.objects;
-create policy "Public can view audio"
+drop policy if exists "Users can view own audio" on storage.objects;
+create policy "Users can view own audio"
 on storage.objects for select
-using ( bucket_id = 'audio-recordings' );
+using (
+  bucket_id = 'audio-recordings'
+  and auth.uid()::text = (storage.foldername(name))[1]
+);
 
--- (Optional) Allow users to update/delete their own files
+-- Users can update their own audio
 drop policy if exists "Users can update own audio" on storage.objects;
 create policy "Users can update own audio"
 on storage.objects for update
 using ( bucket_id = 'audio-recordings' and auth.uid() = owner );
 
+-- Users can delete their own audio
 drop policy if exists "Users can delete own audio" on storage.objects;
 create policy "Users can delete own audio"
 on storage.objects for delete

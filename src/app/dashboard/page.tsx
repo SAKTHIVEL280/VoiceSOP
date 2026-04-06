@@ -1,8 +1,8 @@
 'use client';
 
 
-import React, { useState, useEffect } from 'react';
-import { Plus, FileText, Clock, Trash2, Edit3, Search, Tag } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, FileText, Trash2, Search } from 'lucide-react';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/client';
 import { toast } from 'sonner';
@@ -16,7 +16,6 @@ interface SOP {
     date: string;
     created_at: string;
     steps: number;
-    duration: string;
     tags: string[];
 }
 
@@ -25,13 +24,35 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [sortBy, setSortBy] = useState('newest');
-    const supabase = createClient();
+    const [userTier, setUserTier] = useState<string>('free');
+    const [freeMonthlyUsage, setFreeMonthlyUsage] = useState<{ used: number; limit: number } | null>(null);
+    const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
+    const [deletedIds, setDeletedIds] = useState<Set<number>>(new Set());
+    const supabase = useMemo(() => createClient(), []);
 
     useEffect(() => {
         const fetchSOPs = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            // Fetch user plan
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('subscription_tier, free_sop_monthly_limit, free_sop_monthly_used, free_sop_month_key')
+                .eq('id', user.id)
+                .single();
+            if (profile) {
+                setUserTier(profile.subscription_tier || 'free');
+                const now = new Date();
+                const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+                const used = profile.free_sop_month_key === monthKey ? (profile.free_sop_monthly_used || 0) : 0;
+                setFreeMonthlyUsage({ used, limit: profile.free_sop_monthly_limit || 3 });
+            }
+
             const { data, error } = await supabase
                 .from('sops')
                 .select('*')
+                .eq('user_id', user.id)
                 .order('created_at', { ascending: false });
 
             if (error) {
@@ -40,13 +61,12 @@ export default function DashboardPage() {
             }
 
             if (data) {
-                const formattedSops = data.map((sop: any) => ({
+                const formattedSops = data.map((sop: SOP & { content?: { steps?: unknown[] }, created_at: string, tags?: string[] }) => ({
                     id: sop.id,
                     title: sop.title,
                     date: new Date(sop.created_at).toLocaleDateString(),
                     created_at: sop.created_at,
                     steps: sop.content?.steps?.length || 0,
-                    duration: '0:00', // Placeholder calculation
                     tags: sop.tags || []
                 }));
                 setSops(formattedSops);
@@ -56,60 +76,118 @@ export default function DashboardPage() {
 
         fetchSOPs();
 
-        // Realtime Subscription
-        const channel = supabase
-            .channel('sops_dashboard_changes')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'sops',
-                },
-                (payload) => {
-                    fetchSOPs();
-                }
-            )
-            .subscribe();
+        // Realtime Subscription — filtered to current user
+        // Use cancelled flag to handle React Strict Mode double-invocation
+        let cancelled = false;
+        let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
 
-        // Focus Revalidation (Refetch when user comes back to tab)
+        const setupRealtime = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user || cancelled) return;
+
+            realtimeChannel = supabase
+                .channel('sops_dashboard_changes')
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: 'sops',
+                        filter: `user_id=eq.${user.id}`,
+                    },
+                    () => {
+                        if (!cancelled) fetchSOPs();
+                    }
+                )
+                .subscribe();
+        };
+
+        setupRealtime();
+
+        // Focus Revalidation
         const handleFocus = () => {
             fetchSOPs();
         };
         window.addEventListener('focus', handleFocus);
 
         return () => {
-            supabase.removeChannel(channel);
+            cancelled = true;
+            if (realtimeChannel) supabase.removeChannel(realtimeChannel);
             window.removeEventListener('focus', handleFocus);
         };
-    }, []);
+    }, [supabase]);
 
     const handleDelete = async (id: number) => {
-        // Simple confirm for now, better to use a modal but this is still native.
-        // For a true "non-native" feel we'd need a Dialog component. To save time/complexity, 
-        // we will stick to a toast-based "Delete" OR assume user is sure if they clicked trash. 
-        // Let's rely on standard confirm but use toast for success.
+        if (deletingIds.has(id) || deletedIds.has(id)) return;
         if (!confirm('Are you sure you want to delete this SOP?')) return;
 
-        // Optimistic update
-        setSops(prev => prev.filter(s => s.id !== id));
-        toast.promise(
-            (async () => {
-                const { error } = await supabase
+        setDeletingIds(prev => new Set(prev).add(id));
+
+        // Find the SOP to get its audio_url for cleanup
+        const sopToDelete = sops.find(s => s.id === id);
+
+        const deletePromise = (async () => {
+                // Delete audio file from storage if it exists
+                if (sopToDelete) {
+                    const { data: fullSop } = await supabase
+                        .from('sops')
+                        .select('audio_url')
+                        .eq('id', id)
+                        .single();
+
+                    if (fullSop?.audio_url) {
+                        try {
+                            let storagePath: string | null = null;
+                            if (fullSop.audio_url.startsWith('http')) {
+                                const url = new URL(fullSop.audio_url);
+                                const pathParts = url.pathname.split('/audio-recordings/');
+                                storagePath = pathParts[1] || null;
+                            } else {
+                                storagePath = fullSop.audio_url;
+                            }
+                            if (storagePath) {
+                                await supabase.storage.from('audio-recordings').remove([storagePath]);
+                            }
+                        } catch {
+                            // Audio cleanup is best-effort
+                        }
+                    }
+                }
+
+                const { error, data: deletedData } = await supabase
                     .from('sops')
-                    .delete() // Hard Delete: Permanently remove row
-                    .eq('id', id);
-                if (error) throw error;
-            })(),
-            {
+                    .delete()
+                    .eq('id', id)
+                    .select();
+                
+                if (error) {
+                    throw error;
+                }
+
+                if (!deletedData || deletedData.length === 0) {
+                    throw new Error("Unable to delete. Please check your Supabase RLS DELETE policies.");
+                }
+        })();
+
+        deletePromise
+            .then(() => {
+                setDeletedIds(prev => new Set(prev).add(id));
+            })
+            .finally(() => {
+                setDeletingIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+            });
+
+        toast.promise(deletePromise, {
                 loading: 'Deleting...',
                 success: 'SOP deleted permanently',
-                error: 'Failed to delete SOP'
-            }
-        );
+                error: (err) => {
+                    return err instanceof Error ? err.message : 'Failed to delete SOP';
+                },
+        });
     };
 
     const filteredSops = sops
+        .filter(sop => !deletingIds.has(sop.id) && !deletedIds.has(sop.id))
         .filter(sop => sop.title.toLowerCase().includes(searchTerm.toLowerCase()))
         .sort((a, b) => {
             if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -127,30 +205,32 @@ export default function DashboardPage() {
     }
 
     return (
-        <div className="p-8 max-w-7xl mx-auto">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto">
             <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                 <div>
-                    <h1 className="text-3xl font-serif italic text-off-black mb-2">My SOPs</h1>
-                    <p className="text-gray-500">Manage and organize your standard operating procedures.</p>
+                    <h1 className="text-2xl sm:text-3xl font-serif italic text-off-black mb-1 sm:mb-2">My SOPs</h1>
+                    <p className="text-sm sm:text-base text-gray-500">Manage and organize your standard operating procedures.</p>
                 </div>
-                <div className="flex gap-4 items-center">
+                    <div className="flex gap-4 items-center">
                     {/* Usage Badge (Free Tier Only) */}
+                    {userTier !== 'pro' && (
                     <div className="hidden md:flex flex-col items-end mr-2">
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Free Plan</span>
                         <div className="flex items-center gap-1.5 text-sm font-medium">
-                            <span className={`${sops.filter(s => new Date(s.created_at).getMonth() === new Date().getMonth()).length >= 3 ? 'text-red-500' : 'text-gray-700'}`}>
-                                {sops.filter(s => new Date(s.created_at).getMonth() === new Date().getMonth()).length}
+                            <span className={`${(freeMonthlyUsage?.used || 0) >= (freeMonthlyUsage?.limit || 3) ? 'text-red-500' : 'text-gray-700'}`}>
+                                {freeMonthlyUsage?.used || 0}
                             </span>
                             <span className="text-gray-400">/</span>
-                            <span className="text-gray-400">3</span>
-                            <span className="text-gray-400 text-xs ml-0.5">SOPs</span>
+                            <span className="text-gray-400">{freeMonthlyUsage?.limit || 3}</span>
+                            <span className="text-gray-400 text-xs ml-0.5">tries this month</span>
                         </div>
                     </div>
+                    )}
 
                     <HeroButton
                         href="/dashboard/new"
                         text="New SOP"
-                        className="px-6 py-3 min-w-[160px]"
+                        className="px-6 py-3 min-w-40"
                     />
                 </div>
             </div>
@@ -201,7 +281,7 @@ export default function DashboardPage() {
             {/* Grid only shows if we have SOPs or if we are searching (and finding 0) */}
             {
                 (sops.length > 0 || searchTerm) && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                         {/* Create New Card (Always Visible unless completely empty state shown?) 
                         Actually, keeps "Create New" card even if filtering?
                         If searching and 0 results, we show "No SOPs match".
@@ -214,7 +294,7 @@ export default function DashboardPage() {
                         {!searchTerm && sops.length > 0 && (
                             <Link
                                 href="/dashboard/new"
-                                className="border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center p-12 text-gray-400 hover:border-brand-red hover:text-brand-red hover:bg-red-50/50 transition-all duration-300 group cursor-pointer h-[280px]"
+                                className="border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center p-8 sm:p-12 text-gray-400 hover:border-brand-red hover:text-brand-red hover:bg-red-50/50 transition-all duration-300 group cursor-pointer min-h-52 sm:h-70"
                             >
                                 <div className="w-16 h-16 rounded-full bg-gray-100 group-hover:bg-brand-red/10 flex items-center justify-center mb-4 transition-colors">
                                     <Plus size={32} className="group-hover:scale-110 transition-transform" />
@@ -226,7 +306,7 @@ export default function DashboardPage() {
 
                         {/* Real SOP Cards */}
                         {filteredSops.map((sop) => (
-                            <div key={sop.id} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col justify-between h-[280px] group cursor-pointer relative overflow-hidden">
+                            <Link key={sop.id} href={`/dashboard/sop/${sop.id}`} className="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-100 hover:shadow-md transition-shadow flex flex-col justify-between min-h-52 sm:h-70 group cursor-pointer relative overflow-hidden">
                                 {/* Card Hover Border Effect */}
                                 <div className="absolute top-0 left-0 w-full h-1 bg-gray-100 group-hover:bg-brand-red transition-colors duration-300"></div>
 
@@ -235,20 +315,15 @@ export default function DashboardPage() {
                                         <div className="p-2 bg-warm-grey/10 rounded-lg text-off-black">
                                             <FileText size={24} />
                                         </div>
-                                        <div className="flex gap-1">
-                                            <Link
-                                                href={`/dashboard/sop/${sop.id}`}
-                                                className="text-gray-400 hover:text-blue-500 p-2 hover:bg-blue-50 rounded-full transition-colors z-20"
-                                                title="Edit SOP"
-                                            >
-                                                <Edit3 size={18} />
-                                            </Link>
+                                        <div className="flex gap-1" onClick={(e) => e.preventDefault()}>
                                             <button
                                                 onClick={(e) => {
-                                                    e.preventDefault(); // Prevent Link navigation
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
                                                     handleDelete(sop.id);
                                                 }}
-                                                className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-full transition-colors z-20"
+                                                disabled={deletingIds.has(sop.id)}
+                                                className="text-gray-400 hover:text-red-500 p-2 hover:bg-red-50 rounded-full transition-colors z-20 disabled:opacity-40 disabled:cursor-not-allowed"
                                                 title="Delete SOP"
                                             >
                                                 <Trash2 size={18} />
@@ -256,11 +331,9 @@ export default function DashboardPage() {
                                         </div>
                                     </div>
 
-                                    <Link href={`/dashboard/sop/${sop.id}`} className="block">
-                                        <h3 className="text-xl font-bold text-off-black mb-2 group-hover:text-brand-red transition-colors line-clamp-2">
-                                            {sop.title}
-                                        </h3>
-                                    </Link>
+                                    <h3 className="text-xl font-bold text-off-black mb-2 group-hover:text-brand-red transition-colors line-clamp-2">
+                                        {sop.title}
+                                    </h3>
                                     <p className="text-sm text-gray-500 mb-3">{sop.date}</p>
 
                                     <div className="flex gap-2 mb-2 flex-wrap">
@@ -278,13 +351,8 @@ export default function DashboardPage() {
                                     <span className="flex items-center gap-1">
                                         <span className="font-bold">{sop.steps}</span> steps
                                     </span>
-                                    <span className="w-1 h-1 rounded-full bg-gray-300"></span>
-                                    <span className="flex items-center gap-1">
-                                        <Clock size={14} />
-                                        {sop.duration}
-                                    </span>
                                 </div>
-                            </div>
+                            </Link>
                         ))}
                     </div>
                 )}

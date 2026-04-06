@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
     LayoutDashboard,
     Settings,
     LogOut,
-    Mic
+    Mic,
+    Menu,
+    X
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import FeedbackModal from '@/components/ui/FeedbackModal';
@@ -18,11 +20,17 @@ export default function DashboardLayout({
     children: React.ReactNode;
 }) {
     const pathname = usePathname();
-    const [profile, setProfile] = useState<any>(null);
+    const [profile, setProfile] = useState<Record<string, string> | null>(null);
     const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
-    const supabase = createClient();
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const supabase = useMemo(() => createClient(), []);
 
-    const router = useRouter(); // Ensure useRouter is imported from 'next/navigation' at the top if not already
+    const router = useRouter();
+
+    const handleSignOut = async () => {
+        await supabase.auth.signOut();
+        router.push('/login');
+    };
 
     useEffect(() => {
         const checkUser = async () => {
@@ -46,14 +54,14 @@ export default function DashboardLayout({
         // Subscribe to auth changes to auto-redirect on logout
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_OUT' || !session) {
-                router.push('/login');
+                router.push('/');
             }
         });
 
         return () => {
             subscription.unsubscribe();
         };
-    }, []);
+    }, [router, supabase]);
 
     const navItems = [
         { label: 'My SOPs', href: '/dashboard', icon: LayoutDashboard },
@@ -74,9 +82,37 @@ export default function DashboardLayout({
 
     return (
         <div className="flex h-screen bg-warm-grey/30">
-            {/* Sidebar */}
-            <aside className="hidden md:flex w-64 bg-white border-r border-gray-200 flex-col justify-between">
-                <div className="p-6">
+            {/* Mobile Header */}
+            <div className="fixed top-0 left-0 right-0 z-50 md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200">
+                <Link href="/" className="block">
+                    <span className="text-xl font-serif italic text-brand-red tracking-tight">VoiceSOP</span>
+                </Link>
+                <button
+                    onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    aria-label="Toggle menu"
+                >
+                    {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                </button>
+            </div>
+
+            {/* Mobile Overlay */}
+            {mobileMenuOpen && (
+                <div
+                    className="fixed inset-0 bg-black/40 z-40 md:hidden"
+                    onClick={() => setMobileMenuOpen(false)}
+                />
+            )}
+
+            {/* Sidebar — desktop: always visible, mobile: slide-over */}
+            <aside className={`
+                fixed md:static inset-y-0 left-0 z-40
+                w-64 bg-white border-r border-gray-200 flex-col justify-between
+                transform transition-transform duration-200 ease-in-out
+                ${mobileMenuOpen ? 'translate-x-0 flex' : '-translate-x-full hidden md:flex'}
+                md:translate-x-0
+            `}>
+                <div className="p-6 pt-16 md:pt-6">
                     <Link href="/" className="block mb-10">
                         <span className="text-2xl font-serif italic text-brand-red tracking-tight">VoiceSOP</span>
                     </Link>
@@ -90,6 +126,7 @@ export default function DashboardLayout({
                                 <Link
                                     key={item.href}
                                     href={item.href}
+                                    onClick={() => setMobileMenuOpen(false)}
                                     className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${isActive
                                         ? 'bg-off-black text-white shadow-md'
                                         : 'text-gray-600 hover:bg-gray-100'
@@ -98,8 +135,8 @@ export default function DashboardLayout({
                                     <Icon
                                         size={20}
                                         className={`${isActive ? 'text-brand-red' : ''} transition-transform duration-300 ${item.icon === Mic
-                                                ? 'group-hover:scale-110 group-hover:text-brand-red'
-                                                : 'group-hover:rotate-90'
+                                            ? 'group-hover:scale-110 group-hover:text-brand-red'
+                                            : 'group-hover:rotate-90'
                                             }`}
                                     />
                                     <span className={`font-medium ${isActive ? 'font-sans' : 'font-sans'}`}>
@@ -113,7 +150,7 @@ export default function DashboardLayout({
 
                 <div className="p-6">
                     <button
-                        onClick={() => setIsFeedbackOpen(true)}
+                        onClick={() => { setMobileMenuOpen(false); setIsFeedbackOpen(true); }}
                         className="flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-brand-red hover:bg-red-50 rounded-xl transition-all w-full text-left"
                     >
                         <div className="relative">
@@ -124,14 +161,23 @@ export default function DashboardLayout({
                         <span className="font-medium">Feedback / Bugs</span>
                     </button>
 
-                    <Link href="/" className="flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-off-black hover:bg-gray-50 rounded-xl transition-all">
+                    <button
+                        onClick={() => { setMobileMenuOpen(false); handleSignOut(); }}
+                        className="flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all w-full text-left"
+                    >
                         <LogOut size={20} className="rotate-180" />
+                        <span className="font-medium">Sign Out</span>
+                    </button>
+
+                    <Link href="/" onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-gray-500 hover:text-off-black hover:bg-gray-50 rounded-xl transition-all">
+                        <span className="w-5" />
                         <span className="font-medium">Back to Home</span>
                     </Link>
 
                     {profile && (
                         <Link
                             href="/dashboard/settings"
+                            onClick={() => setMobileMenuOpen(false)}
                             className="mt-6 flex items-center gap-3 p-3 bg-warm-grey/50 rounded-xl hover:bg-gray-100 transition-colors"
                         >
                             <div className="w-10 h-10 rounded-full bg-off-black text-white flex items-center justify-center font-bold text-sm">
@@ -152,7 +198,7 @@ export default function DashboardLayout({
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 overflow-y-auto">
+            <main className="flex-1 overflow-y-auto pt-14 md:pt-0" data-lenis-prevent>
                 {children}
             </main>
 

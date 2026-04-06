@@ -19,6 +19,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://voicesop.com'),
   title: "VoiceSOP - AI SOP Generator",
   description: "Turn messy voice notes into professional SOPs in 60 seconds, using advanced AI.",
   openGraph: {

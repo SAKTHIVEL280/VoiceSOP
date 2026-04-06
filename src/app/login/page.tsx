@@ -1,10 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { Loader2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+
+function sanitizeNextPath(path: string | null): string {
+    if (!path) return '/dashboard';
+    if (!path.startsWith('/') || path.startsWith('//') || path.includes('://')) {
+        return '/dashboard';
+    }
+    return path;
+}
 
 export default function LoginPage() {
     const [fullName, setFullName] = useState('');
@@ -14,8 +22,24 @@ export default function LoginPage() {
     const [isSignUp, setIsSignUp] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
+    const [nextPath, setNextPath] = useState('/dashboard');
     const router = useRouter();
-    const supabase = createClient();
+    const supabase = useMemo(() => createClient(), []);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        setNextPath(sanitizeNextPath(params.get('next')));
+    }, []);
+
+    useEffect(() => {
+        const redirectIfAuthenticated = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                router.replace(nextPath);
+            }
+        };
+        redirectIfAuthenticated();
+    }, [nextPath, router, supabase]);
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -29,7 +53,7 @@ export default function LoginPage() {
                     email,
                     password,
                     options: {
-                        emailRedirectTo: `${location.origin}/auth/callback`,
+                        emailRedirectTo: `${(process.env.NEXT_PUBLIC_SITE_URL || window.location.origin).replace(/\/$/, '')}/auth/callback`,
                         data: {
                             full_name: fullName,
                         },
@@ -43,11 +67,16 @@ export default function LoginPage() {
                     password,
                 });
                 if (error) throw error;
-                router.push('/dashboard');
+                router.push(nextPath);
                 router.refresh();
             }
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : '';
+            if (isSignUp) {
+                setError(msg.includes('already registered') ? 'Could not create account. Please try a different email.' : msg || 'An error occurred');
+            } else {
+                setError('Invalid email or password.');
+            }
         } finally {
             setIsLoading(false);
         }
@@ -55,14 +84,14 @@ export default function LoginPage() {
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-warm-grey px-4">
-            <Link href="/" className="absolute top-8 left-8 flex items-center gap-2 text-gray-500 hover:text-off-black transition-colors">
+            <Link href="/" className="absolute top-4 left-4 sm:top-8 sm:left-8 flex items-center gap-2 text-gray-500 hover:text-off-black transition-colors">
                 <ArrowLeft size={20} />
                 Back to Home
             </Link>
 
-            <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
+            <div className="w-full max-w-md bg-white p-6 sm:p-8 rounded-2xl shadow-xl border border-gray-100">
                 <div className="text-center mb-8">
-                    <h1 className="font-serif text-4xl text-brand-red mb-2">VoiceSOP</h1>
+                    <h1 className="font-serif text-3xl sm:text-4xl text-brand-red mb-2">VoiceSOP</h1>
                     <p className="text-gray-500">{isSignUp ? 'Create your account' : 'Welcome back'}</p>
                 </div>
 
@@ -96,11 +125,15 @@ export default function LoginPage() {
                         <input
                             type="password"
                             required
+                            minLength={6}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             className="w-full p-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-brand-red/20 transition-all"
                             placeholder="••••••••"
                         />
+                        {isSignUp && (
+                            <p className="text-xs text-gray-400 mt-1">Minimum 6 characters</p>
+                        )}
                     </div>
 
                     {error && (

@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { createClient } from "@/utils/supabase/client";
 import EnterScreen from "@/components/ui/EnterScreen";
 import Hero from "@/components/sections/Hero";
 import Features from "@/components/sections/Features";
@@ -17,12 +16,10 @@ const Scene = dynamic(() => import("@/components/canvas/Scene"), { ssr: false })
 
 export default function Home() {
   const { hasEntered, setHasEntered } = useUI();
-  const [isLoading, setIsLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // We can still do some pre-checks or loading simulation here if desired
-    // But referencing UIContext is immediate. we might want to ensure mounted.
-    setIsLoading(false);
+    setMounted(true);
   }, []);
 
   const handleEnter = () => {
@@ -32,7 +29,7 @@ export default function Home() {
   return (
     <main className="relative min-h-screen w-full bg-warm-grey overflow-hidden">
       <AnimatePresence>
-        {!hasEntered && !isLoading && (
+        {mounted && !hasEntered && (
           <EnterScreen onEnter={handleEnter} />
         )}
       </AnimatePresence>
